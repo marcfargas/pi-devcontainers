@@ -4,7 +4,8 @@
   "description": "Launch dev containers with pi pre-installed and configured",
   "type": "module",
   "bin": {
-    "pi-devcontainers": "./dist/index.js"
+    "pi-devcontainers": "./dist/index.js",
+    "pidc": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "files": [
