@@ -16,12 +16,12 @@ import {
   existsSync,
   cpSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { type CliOverrides, resolveConfig, resolveEnvVars } from "../config.js";
 import { mergeDevcontainerJson, type DevcontainerJson } from "../merge.js";
-import { normalizePath, pathExists } from "../paths.js";
+import { normalizePath, pathExists, dockerMountPath } from "../paths.js";
 import { packLinkedExtensions } from "../extensions.js";
 import {
   ensureDevcontainersCli,
@@ -141,17 +141,23 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   // 6. Merge configs
   console.log("  ✓ Merging configuration...");
 
-  // Build temp .devcontainer/ structure (required by devcontainer CLI for local features)
+  // Build temp workspace with .devcontainer/ for the merged config.
+  // The devcontainer CLI requires local features to be children of .devcontainer/,
+  // so when using local features we must use the temp dir as --workspace-folder
+  // and mount the real project via workspaceMount.
   const tempDir = join(tmpdir(), `pi-devcontainer-${Date.now()}`);
   const tempDevcontainerDir = join(tempDir, ".devcontainer");
   mkdirSync(tempDevcontainerDir, { recursive: true });
 
-  // If local feature, copy it into the temp .devcontainer/ so relative path resolves
   let mergeFeatureRef = featureRef.ref;
+  let useLocalFeatureWorkaround = false;
+
   if (featureRef.type === "local") {
+    // Copy feature into temp .devcontainer/ so the CLI can resolve it
     const destFeatureDir = join(tempDevcontainerDir, "pi-feature");
     cpSync(featureRef.path!, destFeatureDir, { recursive: true });
     mergeFeatureRef = "./pi-feature";
+    useLocalFeatureWorkaround = true;
   }
 
   const merged = mergeDevcontainerJson(
@@ -164,14 +170,25 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     }
   );
 
+  // When using local feature, override workspaceFolder + workspaceMount
+  // so the CLI resolves ./pi-feature from the temp .devcontainer/
+  const containerWorkspace = `/workspaces/${basename(workspaceFolder)}`;
+  if (useLocalFeatureWorkaround) {
+    merged.workspaceFolder = containerWorkspace;
+    merged.workspaceMount = `source=${dockerMountPath(workspaceFolder)},target=${containerWorkspace},type=bind,consistency=cached`;
+  }
+
   const tempConfigPath = join(tempDevcontainerDir, "devcontainer.json");
   writeFileSync(tempConfigPath, JSON.stringify(merged, null, 2));
   console.log(`  ✓ Wrote merged config: ${tempConfigPath}`);
 
   // 7. Run devcontainer up
+  // When using local feature workaround, --workspace-folder must be the temp dir
+  // (so the CLI finds .devcontainer/pi-feature). The real project is mounted via workspaceMount.
+  const cliWorkspaceFolder = useLocalFeatureWorkaround ? tempDir : workspaceFolder;
   console.log("  ✓ Starting devcontainer...");
   const containerId = devcontainerUp({
-    workspaceFolder,
+    workspaceFolder: cliWorkspaceFolder,
     configPath: tempConfigPath,
     rebuild: opts.rebuild,
   });
@@ -182,7 +199,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     console.log("  ✓ Launching pi via holdpty...");
     try {
       devcontainerExec({
-        workspaceFolder,
+        workspaceFolder: cliWorkspaceFolder,
         command: [
           "holdpty",
           "launch",
@@ -195,14 +212,14 @@ export async function commandUp(opts: UpOptions): Promise<void> {
       });
       console.log("  ✓ Pi session started (holdpty)");
       console.log(
-        `\n  Attach with: npx pi-devcontainers attach --workspace-folder "${opts.workspaceFolder}"`
+        `\n  Attach with: pidc attach --workspace-folder "${opts.workspaceFolder}"`
       );
     } catch (err) {
       console.error(
         `  ⚠ Failed to launch pi via holdpty: ${err instanceof Error ? err.message : err}`
       );
       console.log(
-        `  You can manually exec into the container:\n  npx @devcontainers/cli exec --workspace-folder "${opts.workspaceFolder}" pi`
+        `  You can manually exec into the container:\n  devcontainer exec --workspace-folder "${cliWorkspaceFolder}" pi`
       );
     }
   }

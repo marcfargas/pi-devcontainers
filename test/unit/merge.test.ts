@@ -14,7 +14,7 @@ const DEFAULT_CONFIG: PiDevcontainerConfig = {
   writable: ["todos", "memoria"],
   extensions: "pack",
   env: {},
-  defaultImage: "mcr.microsoft.com/devcontainers/universal:latest",
+  defaultImage: "mcr.microsoft.com/devcontainers/base:ubuntu",
 };
 
 describe("chainPostCreateCommand", () => {
@@ -131,7 +131,7 @@ describe("mergeDevcontainerJson", () => {
   it("adds default image when project has none", () => {
     const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
     expect(merged.image).toBe(
-      "mcr.microsoft.com/devcontainers/universal:latest"
+      "mcr.microsoft.com/devcontainers/base:ubuntu"
     );
   });
 
@@ -164,9 +164,9 @@ describe("mergeDevcontainerJson", () => {
     // Pi mounts added (RO config + writable volumes)
     expect(merged.mounts!.length).toBeGreaterThan(1);
 
-    // Find the RO host config mount
+    // Find the RO bind mount for ~/.pi
     const hostMount = merged.mounts!.find(
-      (m) => typeof m === "object" && m.target === "/opt/pi-host-config"
+      (m) => typeof m === "object" && m.target === "/home/vscode/.pi"
     );
     expect(hostMount).toBeDefined();
   });
@@ -176,10 +176,10 @@ describe("mergeDevcontainerJson", () => {
 
     const mounts = merged.mounts as Array<{ type: string; source: string; target: string }>;
     const todoMount = mounts.find((m) =>
-      typeof m === "object" && m.target === "/home/node/.pi/todos"
+      typeof m === "object" && m.target === "/home/vscode/.pi/todos"
     );
     const memoriaMount = mounts.find((m) =>
-      typeof m === "object" && m.target === "/home/node/.pi/memoria"
+      typeof m === "object" && m.target === "/home/vscode/.pi/memoria"
     );
 
     expect(todoMount).toBeDefined();
@@ -218,13 +218,27 @@ describe("mergeDevcontainerJson", () => {
     expect(merged.remoteEnv!.MY_VAR).toBe("project-value");
   });
 
-  it("chains postCreateCommand", () => {
+  it("does not chain postCreateCommand without extension staging", () => {
     const project: DevcontainerJson = {
       image: "node:20",
       postCreateCommand: "npm install",
     };
 
     const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {});
+
+    // Without extensions, postCreateCommand is untouched
+    expect(merged.postCreateCommand).toBe("npm install");
+  });
+
+  it("chains postCreateCommand when extension staging is provided", () => {
+    const project: DevcontainerJson = {
+      image: "node:20",
+      postCreateCommand: "npm install",
+    };
+
+    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {}, {
+      extensionStagingDir: "/tmp/pi-ext-staging",
+    });
 
     expect(merged.postCreateCommand).toBe(
       "npm install && /opt/pi/setup.sh"
@@ -249,7 +263,7 @@ describe("generateMinimalDevcontainerJson", () => {
   it("generates config with default image", () => {
     const config = generateMinimalDevcontainerJson(DEFAULT_CONFIG, {});
     expect(config.image).toBe(
-      "mcr.microsoft.com/devcontainers/universal:latest"
+      "mcr.microsoft.com/devcontainers/base:ubuntu"
     );
   });
 
@@ -259,9 +273,10 @@ describe("generateMinimalDevcontainerJson", () => {
     expect(featureKeys.length).toBe(1);
   });
 
-  it("includes mounts and postCreateCommand", () => {
+  it("includes mounts (no postCreateCommand without extensions)", () => {
     const config = generateMinimalDevcontainerJson(DEFAULT_CONFIG, {});
     expect(config.mounts!.length).toBeGreaterThan(0);
-    expect(config.postCreateCommand).toBeDefined();
+    // Without extensions, no postCreateCommand is added
+    expect(config.postCreateCommand).toBeUndefined();
   });
 });

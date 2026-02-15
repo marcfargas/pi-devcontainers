@@ -44,25 +44,37 @@ function piFeatureEntry(config: PiDevcontainerConfig): Record<string, unknown> {
 
 /**
  * Generate mounts for pi's needs.
+ *
+ * Strategy: layered mounts.
+ * 1. RO bind mount of host ~/.pi → container user's ~/.pi (config, skills, etc.)
+ * 2. Writable volume overlays on top for dirs that need writes (todos, memoria)
+ *
+ * The remoteUser's home is typically /home/vscode for devcontainer base images.
+ * We use remoteEnv to set PI_USER_HOME so setup.sh can find the right path.
  */
-function piMounts(config: PiDevcontainerConfig): MountObject[] {
+function piMounts(
+  config: PiDevcontainerConfig,
+  containerHome: string
+): MountObject[] {
   const piDir = piConfigDir();
+  const containerPiDir = `${containerHome}/.pi`;
+
   const mounts: MountObject[] = [
-    // RO bind mount for ~/.pi base config
+    // RO bind mount: host ~/.pi → container ~/.pi
     {
       type: "bind",
       source: dockerMountPath(piDir),
-      target: "/opt/pi-host-config",
+      target: containerPiDir,
       readonly: "true",
     },
   ];
 
-  // Writable Docker volumes for configured dirs
+  // Writable volume overlays on top of the RO bind mount
   for (const dir of config.writable) {
     mounts.push({
       type: "volume",
       source: `pi-${dir.replace(/\//g, "-")}`,
-      target: `/home/node/.pi/${dir}`,
+      target: `${containerPiDir}/${dir}`,
     });
   }
 
@@ -121,9 +133,12 @@ export function mergeDevcontainerJson(
     featureRef?: string;
     /** Path to extension tarballs staging dir (mount source) */
     extensionStagingDir?: string;
+    /** Container user's home directory (default: /home/vscode) */
+    containerHome?: string;
   }
 ): DevcontainerJson {
   const merged: DevcontainerJson = { ...project };
+  const containerHome = options?.containerHome ?? "/home/vscode";
 
   // If no image or build, add default image
   if (!merged.image && !merged.build) {
@@ -138,9 +153,9 @@ export function mergeDevcontainerJson(
     [featureKey]: piFeatureEntry(config),
   };
 
-  // Append mounts
+  // Append mounts — layered: RO bind for ~/.pi, writable volumes on top
   const existingMounts = merged.mounts ?? [];
-  const newMounts = piMounts(config);
+  const newMounts = piMounts(config, containerHome);
 
   // Add extension staging mount if provided
   if (options?.extensionStagingDir) {
@@ -158,11 +173,14 @@ export function mergeDevcontainerJson(
   const existingEnv = merged.remoteEnv ?? {};
   merged.remoteEnv = { ...resolvedEnv, ...existingEnv };
 
-  // Chain postCreateCommand
-  merged.postCreateCommand = chainPostCreateCommand(
-    merged.postCreateCommand,
-    PI_SETUP_SCRIPT
-  );
+  // Only chain postCreateCommand if there are extensions to install
+  // Config copy is handled by layered mounts — no setup.sh needed for that
+  if (options?.extensionStagingDir) {
+    merged.postCreateCommand = chainPostCreateCommand(
+      merged.postCreateCommand,
+      PI_SETUP_SCRIPT
+    );
+  }
 
   return merged;
 }

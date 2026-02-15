@@ -17,7 +17,7 @@ const DEFAULT_CONFIG: PiDevcontainerConfig = {
   writable: ["todos", "memoria"],
   extensions: "pack",
   env: {},
-  defaultImage: "mcr.microsoft.com/devcontainers/universal:latest",
+  defaultImage: "mcr.microsoft.com/devcontainers/base:ubuntu",
 };
 
 function readFixture(name: string): DevcontainerJson {
@@ -47,8 +47,16 @@ describe("merge with basic fixture", () => {
     expect(piFeatureKeys.length).toBe(1);
   });
 
-  it("chains string postCreateCommand", () => {
+  it("preserves string postCreateCommand without extensions", () => {
     const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {});
+    // Without extension staging, postCreateCommand is untouched
+    expect(merged.postCreateCommand).toBe("echo 'Project setup done'");
+  });
+
+  it("chains string postCreateCommand with extensions", () => {
+    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {}, {
+      extensionStagingDir: "/tmp/ext",
+    });
     expect(merged.postCreateCommand).toBe(
       "echo 'Project setup done' && /opt/pi/setup.sh"
     );
@@ -93,8 +101,18 @@ describe("merge with complex fixture", () => {
     expect(merged.mounts!.length).toBeGreaterThan(1);
   });
 
-  it("adds pi-setup to object postCreateCommand", () => {
+  it("preserves object postCreateCommand without extensions", () => {
     const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {});
+    const postCreate = merged.postCreateCommand as Record<string, unknown>;
+    expect(postCreate["install-deps"]).toBe("cargo build");
+    expect(postCreate["setup-tools"]).toBe("cargo install cargo-watch");
+    expect(postCreate["pi-setup"]).toBeUndefined();
+  });
+
+  it("adds pi-setup to object postCreateCommand with extensions", () => {
+    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {}, {
+      extensionStagingDir: "/tmp/ext",
+    });
     const postCreate = merged.postCreateCommand as Record<string, unknown>;
     expect(postCreate["install-deps"]).toBe("cargo build");
     expect(postCreate["setup-tools"]).toBe("cargo install cargo-watch");
@@ -114,14 +132,15 @@ describe("merge with minimal fixture (no devcontainer.json)", () => {
   it("generates config with default image", () => {
     const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
     expect(merged.image).toBe(
-      "mcr.microsoft.com/devcontainers/universal:latest"
+      "mcr.microsoft.com/devcontainers/base:ubuntu"
     );
   });
 
-  it("has pi feature, mounts, and postCreateCommand", () => {
+  it("has pi feature and mounts", () => {
     const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
     expect(Object.keys(merged.features!).length).toBe(1);
     expect(merged.mounts!.length).toBeGreaterThan(0);
-    expect(merged.postCreateCommand).toBe("/opt/pi/setup.sh");
+    // Without extensions, no postCreateCommand
+    expect(merged.postCreateCommand).toBeUndefined();
   });
 });

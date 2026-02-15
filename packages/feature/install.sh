@@ -90,6 +90,16 @@ exec /opt/pi/bin/node "${HOLDPTY_CLI}" "\$@"
 WRAPPER
 chmod +x /usr/local/bin/holdpty
 
+# --- Copy setup.sh into /opt/pi for postCreateCommand ---
+# setup.sh lives alongside install.sh in the feature source.
+# During image build, the feature source is available at the script's directory.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SCRIPT_DIR}/setup.sh" ]; then
+  cp "${SCRIPT_DIR}/setup.sh" "${PI_HOME}/setup.sh"
+  chmod +x "${PI_HOME}/setup.sh"
+  echo "  setup.sh installed to ${PI_HOME}/setup.sh"
+fi
+
 # --- Verify ---
 echo "  Verifying installation..."
 echo "    pi: $(/usr/local/bin/pi --version 2>/dev/null || echo 'installed (version check may need config)')"
