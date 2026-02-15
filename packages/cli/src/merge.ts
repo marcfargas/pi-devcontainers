@@ -5,11 +5,12 @@
  * - features: add pi feature
  * - mounts: append pi mounts
  * - remoteEnv: merge (pi vars don't overwrite project vars)
- * - postCreateCommand: chain with pi setup
+ * - postCreateCommand: untouched (pi uses mounts, no setup.sh chaining needed)
  * - Everything else: untouched
  */
 
 import type { PiDevcontainerConfig } from "./config.js";
+import type { PiSettingsMount } from "./extensions.js";
 import { dockerMountPath, piConfigDir } from "./paths.js";
 
 /** Raw devcontainer.json structure (partial — only what we touch). */
@@ -29,8 +30,6 @@ interface MountObject {
   target: string;
   [key: string]: unknown;
 }
-
-const PI_SETUP_SCRIPT = "/opt/pi/setup.sh";
 
 /**
  * Generate the pi feature entry for the features object.
@@ -131,10 +130,12 @@ export function mergeDevcontainerJson(
   options?: {
     /** Feature reference (e.g., local path or ghcr.io/...) */
     featureRef?: string;
-    /** Path to extension tarballs staging dir (mount source) */
-    extensionStagingDir?: string;
     /** Container user's home directory (default: /home/vscode) */
     containerHome?: string;
+    /** Extension/skill source mounts (RO bind mounts at same path) */
+    settingsMounts?: PiSettingsMount[];
+    /** Path to patched settings.json (single-file bind mount over original) */
+    patchedSettingsPath?: string;
   }
 ): DevcontainerJson {
   const merged: DevcontainerJson = { ...project };
@@ -157,13 +158,25 @@ export function mergeDevcontainerJson(
   const existingMounts = merged.mounts ?? [];
   const newMounts = piMounts(config, containerHome);
 
-  // Add extension staging mount if provided
-  if (options?.extensionStagingDir) {
+  // Mount each extension/skill source dir at the same POSIX path (RO)
+  if (options?.settingsMounts) {
+    for (const m of options.settingsMounts) {
+      newMounts.push({
+        type: "bind",
+        source: dockerMountPath(m.hostPath),
+        target: m.containerPath,
+        readonly: "true",
+      });
+    }
+  }
+
+  // Mount patched settings.json over the original (single-file bind mount)
+  if (options?.patchedSettingsPath) {
+    const containerPiDir = `${containerHome}/.pi`;
     newMounts.push({
       type: "bind",
-      source: dockerMountPath(options.extensionStagingDir),
-      target: "/opt/pi-ext-staging",
-      readonly: "true",
+      source: dockerMountPath(options.patchedSettingsPath),
+      target: `${containerPiDir}/agent/settings.json`,
     });
   }
 
@@ -172,15 +185,6 @@ export function mergeDevcontainerJson(
   // Merge remoteEnv (pi vars don't overwrite project vars)
   const existingEnv = merged.remoteEnv ?? {};
   merged.remoteEnv = { ...resolvedEnv, ...existingEnv };
-
-  // Only chain postCreateCommand if there are extensions to install
-  // Config copy is handled by layered mounts — no setup.sh needed for that
-  if (options?.extensionStagingDir) {
-    merged.postCreateCommand = chainPostCreateCommand(
-      merged.postCreateCommand,
-      PI_SETUP_SCRIPT
-    );
-  }
 
   return merged;
 }

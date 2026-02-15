@@ -53,13 +53,9 @@ describe("merge with basic fixture", () => {
     expect(merged.postCreateCommand).toBe("echo 'Project setup done'");
   });
 
-  it("chains string postCreateCommand with extensions", () => {
-    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {}, {
-      extensionStagingDir: "/tmp/ext",
-    });
-    expect(merged.postCreateCommand).toBe(
-      "echo 'Project setup done' && /opt/pi/setup.sh"
-    );
+  it("does not modify postCreateCommand (no setup.sh needed)", () => {
+    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {});
+    expect(merged.postCreateCommand).toBe("echo 'Project setup done'");
   });
 
   it("preserves project remoteEnv and adds pi env", () => {
@@ -101,22 +97,12 @@ describe("merge with complex fixture", () => {
     expect(merged.mounts!.length).toBeGreaterThan(1);
   });
 
-  it("preserves object postCreateCommand without extensions", () => {
+  it("preserves object postCreateCommand untouched", () => {
     const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {});
     const postCreate = merged.postCreateCommand as Record<string, unknown>;
     expect(postCreate["install-deps"]).toBe("cargo build");
     expect(postCreate["setup-tools"]).toBe("cargo install cargo-watch");
     expect(postCreate["pi-setup"]).toBeUndefined();
-  });
-
-  it("adds pi-setup to object postCreateCommand with extensions", () => {
-    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {}, {
-      extensionStagingDir: "/tmp/ext",
-    });
-    const postCreate = merged.postCreateCommand as Record<string, unknown>;
-    expect(postCreate["install-deps"]).toBe("cargo build");
-    expect(postCreate["setup-tools"]).toBe("cargo install cargo-watch");
-    expect(postCreate["pi-setup"]).toBe("/opt/pi/setup.sh");
   });
 
   it("preserves project remoteEnv (takes precedence)", () => {

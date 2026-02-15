@@ -218,7 +218,7 @@ describe("mergeDevcontainerJson", () => {
     expect(merged.remoteEnv!.MY_VAR).toBe("project-value");
   });
 
-  it("does not chain postCreateCommand without extension staging", () => {
+  it("preserves postCreateCommand untouched", () => {
     const project: DevcontainerJson = {
       image: "node:20",
       postCreateCommand: "npm install",
@@ -226,36 +226,39 @@ describe("mergeDevcontainerJson", () => {
 
     const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {});
 
-    // Without extensions, postCreateCommand is untouched
     expect(merged.postCreateCommand).toBe("npm install");
   });
 
-  it("chains postCreateCommand when extension staging is provided", () => {
-    const project: DevcontainerJson = {
-      image: "node:20",
-      postCreateCommand: "npm install",
-    };
-
-    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {}, {
-      extensionStagingDir: "/tmp/pi-ext-staging",
-    });
-
-    expect(merged.postCreateCommand).toBe(
-      "npm install && /opt/pi/setup.sh"
-    );
-  });
-
-  it("adds extension staging mount when provided", () => {
+  it("adds settings mounts for extensions/skills", () => {
     const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {}, {
-      extensionStagingDir: "/tmp/pi-ext-staging",
+      settingsMounts: [
+        { hostPath: "/c/dev/my-ext", containerPath: "/c/dev/my-ext" },
+        { hostPath: "/c/dev/my-skill", containerPath: "/c/dev/my-skill" },
+      ],
     });
 
     const mounts = merged.mounts as Array<{ target: string; type: string }>;
     const extMount = mounts.find((m) =>
-      typeof m === "object" && m.target === "/opt/pi-ext-staging"
+      typeof m === "object" && m.target === "/c/dev/my-ext"
+    );
+    const skillMount = mounts.find((m) =>
+      typeof m === "object" && m.target === "/c/dev/my-skill"
     );
     expect(extMount).toBeDefined();
     expect(extMount!.type).toBe("bind");
+    expect(skillMount).toBeDefined();
+  });
+
+  it("mounts patched settings.json over original", () => {
+    const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {}, {
+      patchedSettingsPath: "/tmp/patched-settings.json",
+    });
+
+    const mounts = merged.mounts as Array<{ target: string; source: string }>;
+    const settingsMount = mounts.find((m) =>
+      typeof m === "object" && m.target === "/home/vscode/.pi/agent/settings.json"
+    );
+    expect(settingsMount).toBeDefined();
   });
 });
 

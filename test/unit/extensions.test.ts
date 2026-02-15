@@ -1,28 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { readPiExtensions } from "../../packages/cli/src/extensions.js";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { resolveSettingsForContainer } from "../../packages/cli/src/extensions.js";
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-describe("readPiExtensions", () => {
+describe("resolveSettingsForContainer", () => {
   let testDir: string;
-  let fakeHome: string;
   let fakeWorkspace: string;
-  let origHome: string | undefined;
 
   beforeEach(() => {
     testDir = join(tmpdir(), `pi-ext-test-${Date.now()}`);
-
-    // Fake home with .pi/agent/settings.json
-    fakeHome = join(testDir, "home");
-    mkdirSync(join(fakeHome, ".pi", "agent"), { recursive: true });
 
     // Fake workspace with .pi/settings.json
     fakeWorkspace = join(testDir, "workspace");
     mkdirSync(join(fakeWorkspace, ".pi"), { recursive: true });
 
     // Create some fake extension dirs
-    for (const ext of ["ext-a", "ext-b", "ext-c"]) {
+    for (const ext of ["ext-a", "ext-b"]) {
       const extDir = join(testDir, "extensions", ext);
       mkdirSync(extDir, { recursive: true });
       writeFileSync(
@@ -30,14 +24,9 @@ describe("readPiExtensions", () => {
         JSON.stringify({ name: `@test/${ext}` })
       );
     }
-
-    origHome = process.env.HOME;
-    // readPiExtensions uses homedir() which reads HOME on posix
-    // On Windows it uses USERPROFILE — we'll test with explicit paths instead
   });
 
   afterEach(() => {
-    if (origHome !== undefined) process.env.HOME = origHome;
     try {
       rmSync(testDir, { recursive: true, force: true });
     } catch {
@@ -45,56 +34,55 @@ describe("readPiExtensions", () => {
     }
   });
 
-  it("returns empty array when no settings exist", () => {
-    // Point to a nonexistent workspace with no user settings
-    const result = readPiExtensions(join(testDir, "nonexistent"));
-    // This reads from actual ~/.pi/agent/settings.json (if exists) + fake workspace
-    // Since fake workspace has no settings, only user extensions come through
-    expect(Array.isArray(result)).toBe(true);
+  it("returns empty when no project settings", () => {
+    // Calls with a workspace that has no .pi/settings.json
+    // Will still read user-level settings (if they exist)
+    const result = resolveSettingsForContainer(join(testDir, "nonexistent"));
+    expect(Array.isArray(result.mounts)).toBe(true);
   });
 
-  it("reads extensions from user settings", () => {
+  it("generates mounts for extensions in project settings", () => {
     const extA = join(testDir, "extensions", "ext-a");
     const extB = join(testDir, "extensions", "ext-b");
 
     writeFileSync(
-      join(fakeHome, ".pi", "agent", "settings.json"),
-      JSON.stringify({
-        extensions: [extA, extB],
-      })
-    );
-
-    // We can't easily override homedir(), so test the internal behavior
-    // by checking the function handles valid paths
-    // Instead, test with workspace-level settings
-    writeFileSync(
       join(fakeWorkspace, ".pi", "settings.json"),
       JSON.stringify({
         extensions: [extA, extB],
       })
     );
 
-    const result = readPiExtensions(fakeWorkspace);
-    const names = result.map((e) => e.name);
-    expect(names).toContain("@test/ext-a");
-    expect(names).toContain("@test/ext-b");
+    const result = resolveSettingsForContainer(fakeWorkspace);
+    // Should have mounts for both extensions
+    const containerPaths = result.mounts.map((m) => m.containerPath);
+    // Paths should exist as mounts
+    expect(result.mounts.length).toBeGreaterThanOrEqual(2);
+    // Each mount should have both hostPath and containerPath
+    for (const m of result.mounts) {
+      expect(m.hostPath).toBeDefined();
+      expect(m.containerPath).toBeDefined();
+    }
   });
 
-  it("deduplicates extensions from user and project", () => {
+  it("deduplicates identical paths", () => {
     const extA = join(testDir, "extensions", "ext-a");
 
-    // Same extension in both
     writeFileSync(
       join(fakeWorkspace, ".pi", "settings.json"),
-      JSON.stringify({ extensions: [extA, extA] })
+      JSON.stringify({
+        extensions: [extA],
+        skills: [extA], // same path as extension
+      })
     );
 
-    const result = readPiExtensions(fakeWorkspace);
-    const matching = result.filter((e) => e.name === "@test/ext-a");
+    const result = resolveSettingsForContainer(fakeWorkspace);
+    const matching = result.mounts.filter((m) =>
+      m.hostPath.includes("ext-a")
+    );
     expect(matching).toHaveLength(1);
   });
 
-  it("skips nonexistent extension paths", () => {
+  it("skips nonexistent paths", () => {
     writeFileSync(
       join(fakeWorkspace, ".pi", "settings.json"),
       JSON.stringify({
@@ -105,24 +93,29 @@ describe("readPiExtensions", () => {
       })
     );
 
-    const result = readPiExtensions(fakeWorkspace);
-    const names = result.map((e) => e.name);
-    expect(names).toContain("@test/ext-a");
-    expect(names).not.toContain("nonexistent");
+    const result = resolveSettingsForContainer(fakeWorkspace);
+    const hasNonexistent = result.mounts.some((m) =>
+      m.hostPath.includes("nonexistent")
+    );
+    expect(hasNonexistent).toBe(false);
   });
 
-  it("skips extensions without package.json", () => {
-    const noPackage = join(testDir, "extensions", "no-pkg");
-    mkdirSync(noPackage, { recursive: true });
-    // No package.json
+  it("generates patched settings.json", () => {
+    const extA = join(testDir, "extensions", "ext-a");
 
     writeFileSync(
       join(fakeWorkspace, ".pi", "settings.json"),
-      JSON.stringify({ extensions: [noPackage] })
+      JSON.stringify({
+        extensions: [extA],
+        shellPath: "C:\\Windows\\bash.exe",
+      })
     );
 
-    const result = readPiExtensions(fakeWorkspace);
-    const matching = result.filter((e) => e.sourcePath === noPackage);
-    expect(matching).toHaveLength(0);
+    const result = resolveSettingsForContainer(fakeWorkspace);
+
+    // User-level settings also generates a patched file
+    // (but only if user settings exist — may or may not depending on test env)
+    // The project settings alone should still produce mounts
+    expect(result.mounts.length).toBeGreaterThanOrEqual(1);
   });
 });

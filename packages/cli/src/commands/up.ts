@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { type CliOverrides, resolveConfig, resolveEnvVars } from "../config.js";
 import { mergeDevcontainerJson, type DevcontainerJson } from "../merge.js";
 import { normalizePath, pathExists, dockerMountPath } from "../paths.js";
-import { packLinkedExtensions } from "../extensions.js";
+import { resolveSettingsForContainer } from "../extensions.js";
 import {
   ensureDevcontainersCli,
   devcontainerUp,
@@ -107,20 +107,18 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   const config = resolveConfig(opts);
   const resolvedEnv = resolveEnvVars(config.env);
 
-  // 3. Pack linked extensions if configured
-  let extensionStagingDir: string | undefined;
-  if (config.extensions === "pack") {
-    console.log("  ✓ Packing linked extensions...");
-    const { stagingDir, extensions } = packLinkedExtensions(workspaceFolder);
-    if (extensions.length > 0) {
-      extensionStagingDir = stagingDir;
-      for (const ext of extensions) {
-        const status = ext.cached ? "(cached)" : "(packed)";
-        console.log(`    - ${ext.name} ${status}`);
-      }
-    } else {
-      console.log("    (no linked extensions found)");
+  // 3. Resolve extensions/skills from pi settings
+  console.log("  ✓ Resolving extensions & skills...");
+  const settingsResolution = config.extensions !== "skip"
+    ? resolveSettingsForContainer(workspaceFolder)
+    : { mounts: [], patchedSettingsPath: null };
+
+  if (settingsResolution.mounts.length > 0) {
+    for (const m of settingsResolution.mounts) {
+      console.log(`    - ${m.containerPath}`);
     }
+  } else {
+    console.log("    (no extensions or skills to mount)");
   }
 
   // 4. Read project's devcontainer.json
@@ -166,7 +164,8 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     resolvedEnv,
     {
       featureRef: mergeFeatureRef,
-      extensionStagingDir,
+      settingsMounts: settingsResolution.mounts,
+      patchedSettingsPath: settingsResolution.patchedSettingsPath ?? undefined,
     }
   );
 
