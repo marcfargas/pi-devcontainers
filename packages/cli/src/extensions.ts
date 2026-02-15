@@ -110,42 +110,43 @@ export function resolveSettingsForContainer(
   for (const p of [...extensions, ...projectExtensions]) addPath(p);
   for (const p of [...skills, ...projectSkills]) addPath(p);
 
-  // Check if any paths actually need conversion (Windows → POSIX)
-  const needsPatching = [...allPaths.values()].some(
-    (m) => m.hostPath !== m.containerPath
-  );
-
-  if (!needsPatching && allPaths.size === 0) {
+  if (allPaths.size === 0) {
     return { mounts: [], patchedSettingsPath: null };
   }
 
-  // Generate patched settings.json with container paths
-  const patched = { ...settings };
+  // Only patch settings.json on Windows (paths need conversion).
+  // On Linux/macOS, host paths are already valid POSIX — use the original
+  // settings.json as-is (preserves live reload on config changes).
+  const needsPatching = process.platform === "win32";
 
-  if (extensions.length > 0) {
-    patched.extensions = extensions.map((p) => {
-      const resolved = resolve(p);
-      return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
-    });
+  let patchedPath: string | null = null;
+  if (needsPatching) {
+    const patched = { ...settings };
+
+    if (extensions.length > 0) {
+      patched.extensions = extensions.map((p) => {
+        const resolved = resolve(p);
+        return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
+      });
+    }
+
+    if (skills.length > 0) {
+      patched.skills = skills.map((p) => {
+        const resolved = resolve(p);
+        return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
+      });
+    }
+
+    // Windows shell won't exist in Linux container
+    if (patched.shellPath) {
+      patched.shellPath = "/bin/bash";
+    }
+
+    const tempDir = join(tmpdir(), `pi-settings-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+    patchedPath = join(tempDir, "settings.json");
+    writeFileSync(patchedPath, JSON.stringify(patched, null, 2));
   }
-
-  if (skills.length > 0) {
-    patched.skills = skills.map((p) => {
-      const resolved = resolve(p);
-      return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
-    });
-  }
-
-  // Also fix shellPath — Windows shell won't exist in Linux container
-  if (patched.shellPath) {
-    patched.shellPath = "/bin/bash";
-  }
-
-  // Write patched settings to temp file
-  const tempDir = join(tmpdir(), `pi-settings-${Date.now()}`);
-  mkdirSync(tempDir, { recursive: true });
-  const patchedPath = join(tempDir, "settings.json");
-  writeFileSync(patchedPath, JSON.stringify(patched, null, 2));
 
   return {
     mounts: [...allPaths.values()],
