@@ -1,0 +1,11 @@
+{
+  "name": "@marcfargas/pi-devcontainer-feature",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dev Container Feature: Pi Coding Agent",
+  "files": [
+    "devcontainer-feature.json",
+    "install.sh",
+    "setup.sh"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@marcfargas/pi-devcontainers",
+  "version": "0.1.0",
+  "description": "Launch dev containers with pi pre-installed and configured",
+  "type": "module",
+  "bin": {
+    "pi-devcontainers": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "pi",
+    "devcontainers",
+    "dev-containers",
+    "docker",
+    "coding-agent"
+  ],
+  "author": "Marc Fargas <marcfargas@users.noreply.github.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}

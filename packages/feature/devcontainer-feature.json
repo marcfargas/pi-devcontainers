@@ -1,0 +1,24 @@
+{
+  "id": "pi",
+  "version": "0.1.0",
+  "name": "Pi Coding Agent",
+  "description": "Installs pi coding agent with an isolated Node.js runtime in /opt/pi",
+  "documentationURL": "https://github.com/marcfargas/pi-devcontainers",
+  "options": {
+    "nodeVersion": {
+      "type": "string",
+      "default": "22.14.0",
+      "description": "Node.js version to install for pi (isolated in /opt/pi)"
+    },
+    "piVersion": {
+      "type": "string",
+      "default": "latest",
+      "description": "Pi coding agent npm version"
+    }
+  },
+  "installsAfter": [],
+  "entrypoint": "",
+  "privileged": false,
+  "containerEnv": {},
+  "customizations": {}
+}

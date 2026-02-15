@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.tgz
+.pi/devcontainers-cache/
+
+# Temp files
+*.tmp
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Test artifacts
+coverage/

@@ -1,0 +1,20 @@
+{
+  "name": "pi-devcontainers-root",
+  "private": true,
+  "workspaces": [
+    "packages/cli",
+    "packages/feature"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/cli",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "lint": "tsc --noEmit -p packages/cli/tsconfig.json"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
