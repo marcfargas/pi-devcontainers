@@ -8,35 +8,58 @@ Solves the "Windows ARM problem": native module failures, path inconsistencies, 
 
 ```bash
 # Launch a devcontainer with pi for your project
-npx @marcfargas/pi-devcontainers up -w /path/to/project
+npx pidc up -w /path/to/project
 
 # Attach to the running pi session
-npx @marcfargas/pi-devcontainers attach -w /path/to/project
+npx pidc attach -w /path/to/project
 
 # Stop the container
-npx @marcfargas/pi-devcontainers down -w /path/to/project
+npx pidc down -w /path/to/project
 ```
+
+Both `pidc` and `pi-devcontainers` work as commands.
 
 ## How It Works
 
 1. **Reads your project's** `devcontainer.json` (if it exists)
 2. **Reads your pi config** from `~/.pi/devcontainers.json`
-3. **Packs linked extensions** via `npm pack` (so they work inside the container)
+3. **Resolves extensions & skills** from pi's `settings.json` — mounts them directly into the container
 4. **Merges** everything into a temporary `devcontainer.json` — your project's config is never modified
 5. **Launches** the container via `@devcontainers/cli`
 6. **Starts pi** inside the container via [holdpty](https://github.com/marcfargas/holdpty)
 
 ```
-Host (any OS)                          Container (Linux)
-┌───────────────────────┐              ┌────────────────────────────┐
-│ npx pi-devcontainers  │──── up ─────▶│ /opt/pi/      (node + pi) │
-│                       │              │ /opt/pi-host-config/ (RO)  │
-│ ~/.pi/ (your config)  │              │ ~/.pi/todos/  (volume, RW) │
-│                       │◀── attach ──│ ~/.pi/memoria (volume, RW) │
-│                       │              │ /workspace/   (project)    │
-└───────────────────────┘              │ holdpty → pi session       │
-                                       └────────────────────────────┘
+Host (any OS)                            Container (Linux)
+┌─────────────────────────┐              ┌──────────────────────────────────┐
+│ npx pidc up             │──── up ─────▶│ /opt/pi/          (node + pi)   │
+│                         │              │                                  │
+│ ~/.pi/ ─────────────────│──── RO ─────▶│ ~/.pi/            (config, RO)  │
+│                         │              │ ~/.pi/todos/      (volume, RW)  │
+│                         │              │ ~/.pi/memoria/    (volume, RW)  │
+│                         │              │                                  │
+│ C:/dev/my-ext/ ─────────│──── RO ─────▶│ /c/dev/my-ext/    (extension)   │
+│ C:/dev/skills/ ─────────│──── RO ─────▶│ /c/dev/skills/    (skills)      │
+│                         │              │                                  │
+│ project/ ───────────────│── bind ─────▶│ /workspaces/project/ (project)  │
+│                         │◀── attach ──│                                  │
+│                         │              │ holdpty → pi session             │
+└─────────────────────────┘              └──────────────────────────────────┘
 ```
+
+### Mount Architecture
+
+Pi's configuration and code reach the container through layered mounts:
+
+| Mount | Type | What |
+|-------|------|------|
+| `~/.pi` → `~/.pi` | bind (RO) | All pi config: agent, settings, skills references |
+| `~/.pi/todos` | volume (RW) | Writable overlay for TODO persistence |
+| `~/.pi/memoria` | volume (RW) | Writable overlay for agent memory |
+| Extension/skill dirs | bind (RO) | Each path from `settings.json`, mounted at the POSIX equivalent |
+| `settings.json` | bind (file) | **Windows only** — patched copy with `C:/dev/…` → `/c/dev/…` path conversion |
+| Project dir | bind (RW) | Your project workspace |
+
+On **Linux/macOS**, the original `settings.json` is used as-is through the `~/.pi` RO mount — live config reload works normally. On **Windows**, a patched copy is bind-mounted over it because Windows paths (`C:/dev/…`) must be converted to POSIX (`/c/dev/…`) for the Linux container.
 
 ## User Configuration
 
@@ -46,22 +69,19 @@ Create `~/.pi/devcontainers.json`:
 {
   // Node.js version for pi's isolated runtime
   "nodeVersion": "22.14.0",
-  
+
   // Pi version (npm semver or "latest")
   "piVersion": "latest",
-  
-  // How to run pi: "holdpty" (now) or "pi-server" (future)
+
+  // How to run pi: "holdpty" (default) or "pi-server" (future)
   "mode": "holdpty",
-  
+
   // Dirs under ~/.pi that need to be writable (Docker volumes)
   "writable": ["todos", "memoria"],
-  
-  // How to handle npm-linked extensions
-  // "pack" = npm pack on host, install in container
-  // "registry" = install from npm registry
-  // "skip" = no extensions
+
+  // Extension handling: "pack" (mount from host) or "skip" (none)
   "extensions": "pack",
-  
+
   // Environment variables to inject
   // With value: set explicitly
   // Without value (null): copy from host environment
@@ -70,16 +90,18 @@ Create `~/.pi/devcontainers.json`:
     "CREDENTIAL_BROKER_TOKEN": null,
     "CUSTOM_VAR": "explicit-value"
   },
-  
+
   // Default base image for projects without devcontainer.json
-  "defaultImage": "mcr.microsoft.com/devcontainers/universal:latest"
+  "defaultImage": "mcr.microsoft.com/devcontainers/base:ubuntu"
 }
 ```
+
+All fields are optional — sensible defaults are used for anything omitted.
 
 ## CLI Reference
 
 ```
-npx @marcfargas/pi-devcontainers <command> [options]
+npx pidc <command> [options]
 
 Commands:
   up       Create and start a devcontainer with pi
@@ -93,7 +115,7 @@ Options:
   --writable <path>              Additional writable dir (repeatable)
   -e, --env <KEY=VALUE|KEY>      Set env var (KEY=VALUE) or copy from host (KEY)
   --rebuild                      Force rebuild of container
-  --no-extensions                Skip extension packing
+  --no-extensions                Skip extension/skill mounting
 ```
 
 ## How the Merge Works
@@ -103,16 +125,29 @@ Your project's `devcontainer.json` is the **base**. pi-devcontainers only **adds
 | What | How |
 |------|-----|
 | `features` | Adds the pi feature to the existing features object |
-| `mounts` | Appends pi mounts (RO config, writable volumes, extension tarballs) |
+| `mounts` | Appends pi mounts (RO config, writable volumes, extension/skill dirs) |
 | `remoteEnv` | Merges — project vars take precedence over pi vars |
-| `postCreateCommand` | Chains — string: `&&`, array: converts to object, object: adds `pi-setup` key |
+| `postCreateCommand` | **Untouched** — pi uses mounts, no setup chaining needed |
 | Everything else | **Untouched** (image, build, ports, customizations, etc.) |
 
 If your project has no `devcontainer.json`, a minimal one is generated with the configured default image.
 
 ## Dev Container Feature
 
-The feature installs an **isolated** Node.js + pi + holdpty in `/opt/pi`. It does not touch the container's existing Node.js or any project dependencies.
+The feature installs an **isolated** Node.js + pi + holdpty in `/opt/pi/`. It does not touch the container's existing Node.js or any project dependencies.
+
+```
+/opt/pi/
+├── bin/
+│   ├── node
+│   ├── npm
+│   ├── pi
+│   └── holdpty
+├── lib/
+└── setup.sh
+```
+
+The feature is added automatically by the CLI — you never need to reference it in your project's `devcontainer.json`.
 
 ## Development
 
@@ -123,6 +158,18 @@ npm install
 npm run build
 npm test                    # unit tests
 npm run test:integration    # Docker integration tests
+```
+
+### Monorepo Structure
+
+```
+packages/
+├── cli/        # Host CLI (npx pidc)
+├── feature/    # Dev Container Feature (install.sh, setup.sh)
+└── wrapper/    # npm name squatting (pi-devcontainers → @marcfargas/pi-devcontainers)
+test/
+├── unit/       # 57 unit tests (paths, config, merge, extensions)
+└── integration/
 ```
 
 ## License
