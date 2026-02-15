@@ -1,9 +1,9 @@
 /**
  * Integration test: verify setup.sh (postCreateCommand) works correctly.
  *
- * Tests:
+ * Builds a test image using Dockerfile.setup-test and verifies:
  * - Copies config from host mount to ~/.pi
- * - Installs extension tarballs
+ * - Handles missing host config gracefully
  * - Creates writable directories
  */
 
@@ -17,56 +17,37 @@ import {
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
-const FEATURE_DIR = resolve(__dirname, "../../packages/feature");
+const PROJECT_ROOT = resolve(__dirname, "../..");
 const TEST_IMAGE = "pi-setup-test";
 
-describe("setup.sh", () => {
-  let fixtureDir: string;
+let fixtureDir: string;
 
+function dockerRun(cmd: string, extraArgs: string = ""): string {
+  return execSync(
+    `docker run --rm ${extraArgs} ${TEST_IMAGE} bash -c "${cmd}"`,
+    { encoding: "utf-8", timeout: 30000 }
+  ).trim();
+}
+
+describe("setup.sh", () => {
   beforeAll(() => {
     // Create fixture directories simulating host mounts
-    fixtureDir = join(tmpdir(), `pi-setup-test-${Date.now()}`);
+    fixtureDir = join(tmpdir(), `pi-setup-fixture-${Date.now()}`);
 
     // Simulate /opt/pi-host-config (host's ~/.pi)
     const hostConfig = join(fixtureDir, "host-config");
     mkdirSync(join(hostConfig, "agent", "skills"), { recursive: true });
     mkdirSync(join(hostConfig, "skills"), { recursive: true });
-    writeFileSync(
-      join(hostConfig, "agent", "AGENTS.md"),
-      "# Test AGENTS.md"
-    );
-    writeFileSync(
-      join(hostConfig, "config.json"),
-      '{"test": true}'
-    );
+    writeFileSync(join(hostConfig, "agent", "AGENTS.md"), "# Test AGENTS.md");
+    writeFileSync(join(hostConfig, "config.json"), '{"test": true}');
 
-    // Simulate /opt/pi-ext-staging (packed extensions)
-    const extStaging = join(fixtureDir, "ext-staging");
-    mkdirSync(extStaging, { recursive: true });
-    // Create a minimal valid tarball for testing
-    // (we won't actually install it, just test the flow)
-
-    // Build test image
-    const dockerfile = `
-FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y curl ca-certificates xz-utils
-# Minimal /opt/pi with just node
-RUN mkdir -p /opt/pi/bin && \\
-    curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-$(case $(uname -m) in x86_64) echo x64;; aarch64) echo arm64;; esac).tar.xz \\
-    | tar -xJ -C /opt/pi --strip-components=1
-COPY setup.sh /opt/pi/setup.sh
-RUN chmod +x /opt/pi/setup.sh
-ENV HOME=/home/testuser
-RUN useradd -m testuser
-USER testuser
-`;
-
+    console.log("Building setup test image...");
     execSync(
-      `docker build -t ${TEST_IMAGE} -f - "${FEATURE_DIR}" <<'DOCKERFILE'\n${dockerfile}\nDOCKERFILE`,
+      `docker build -t ${TEST_IMAGE} -f test/integration/Dockerfile.setup-test .`,
       {
+        cwd: PROJECT_ROOT,
         timeout: 600000,
         stdio: "inherit",
-        shell: "/bin/bash",
       }
     );
   }, 600000);
@@ -80,34 +61,29 @@ USER testuser
     } catch {}
   });
 
-  function dockerRun(cmd: string, mounts: string[] = []): string {
-    const mountArgs = mounts.map((m) => `-v "${m}"`).join(" ");
-    return execSync(
-      `docker run --rm ${mountArgs} ${TEST_IMAGE} bash -c "${cmd}"`,
-      { encoding: "utf-8", timeout: 30000 }
-    ).trim();
-  }
-
   it("creates ~/.pi directory", () => {
+    const hostConfigPath = join(fixtureDir, "host-config").split("\\").join("/");
     const result = dockerRun(
       "/opt/pi/setup.sh && test -d /home/testuser/.pi && echo yes",
-      [`${join(fixtureDir, "host-config")}:/opt/pi-host-config:ro`]
+      `-v "${hostConfigPath}:/opt/pi-host-config:ro"`
     );
     expect(result).toContain("yes");
   });
 
   it("copies agent config from host mount", () => {
+    const hostConfigPath = join(fixtureDir, "host-config").split("\\").join("/");
     const result = dockerRun(
       "/opt/pi/setup.sh && cat /home/testuser/.pi/agent/AGENTS.md",
-      [`${join(fixtureDir, "host-config")}:/opt/pi-host-config:ro`]
+      `-v "${hostConfigPath}:/opt/pi-host-config:ro"`
     );
     expect(result).toContain("Test AGENTS.md");
   });
 
   it("copies config.json from host mount", () => {
+    const hostConfigPath = join(fixtureDir, "host-config").split("\\").join("/");
     const result = dockerRun(
       "/opt/pi/setup.sh && cat /home/testuser/.pi/config.json",
-      [`${join(fixtureDir, "host-config")}:/opt/pi-host-config:ro`]
+      `-v "${hostConfigPath}:/opt/pi-host-config:ro"`
     );
     expect(result).toContain('"test": true');
   });
@@ -120,10 +96,7 @@ USER testuser
   });
 
   it("handles missing host config gracefully", () => {
-    // Should not error when /opt/pi-host-config doesn't exist
-    const result = dockerRun(
-      "/opt/pi/setup.sh && echo success"
-    );
+    const result = dockerRun("/opt/pi/setup.sh && echo success");
     expect(result).toContain("success");
   });
 });

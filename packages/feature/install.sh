@@ -36,18 +36,22 @@ mkdir -p "${PI_HOME}"
 NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${ARCH}.tar.xz"
 echo "  Downloading Node.js from ${NODE_URL}..."
 
-# Install curl/wget if needed (works on both Debian and Alpine)
-if ! command -v curl &>/dev/null; then
-  if command -v apt-get &>/dev/null; then
-    apt-get update && apt-get install -y --no-install-recommends curl ca-certificates xz-utils
-  elif command -v apk &>/dev/null; then
-    apk add --no-cache curl ca-certificates xz
-  fi
+# Install dependencies (curl, build tools for native modules like node-pty)
+if command -v apt-get &>/dev/null; then
+  apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates xz-utils \
+    build-essential python3
+elif command -v apk &>/dev/null; then
+  apk add --no-cache curl ca-certificates xz \
+    build-base python3
 fi
 
 curl -fsSL "${NODE_URL}" | tar -xJ -C "${PI_HOME}" --strip-components=1
 
 echo "  Node.js installed: $(${PI_HOME}/bin/node --version)"
+
+# --- Ensure /opt/pi/bin is in PATH for node-gyp and npm ---
+export PATH="${PI_HOME}/bin:${PATH}"
 
 # --- Install pi ---
 echo "  Installing pi@${PI_VERSION}..."
@@ -57,20 +61,32 @@ else
   "${PI_HOME}/bin/npm" install -g "@mariozechner/pi-coding-agent@${PI_VERSION}"
 fi
 
-# --- Install holdpty ---
+# --- Install holdpty (has native deps: node-pty) ---
 echo "  Installing holdpty..."
-"${PI_HOME}/bin/npm" install -g @marcfargas/holdpty
+"${PI_HOME}/bin/npm" install -g holdpty
 
 # --- Create wrapper scripts in /usr/local/bin ---
-cat > /usr/local/bin/pi << 'WRAPPER'
+# Find pi's actual cli.js path (may vary by version)
+PI_CLI=$(find "${PI_HOME}/lib/node_modules" -path "*/pi-coding-agent/cli.js" -o -path "*/pi-coding-agent/dist/cli.js" 2>/dev/null | head -1)
+if [ -z "$PI_CLI" ]; then
+  # Fallback: use the npm bin link
+  PI_CLI="${PI_HOME}/lib/node_modules/@mariozechner/pi-coding-agent/cli.js"
+fi
+
+cat > /usr/local/bin/pi << WRAPPER
 #!/bin/sh
-exec /opt/pi/bin/node /opt/pi/lib/node_modules/@mariozechner/pi-coding-agent/cli.js "$@"
+exec /opt/pi/bin/node "${PI_CLI}" "\$@"
 WRAPPER
 chmod +x /usr/local/bin/pi
 
-cat > /usr/local/bin/holdpty << 'WRAPPER'
+HOLDPTY_CLI=$(find "${PI_HOME}/lib/node_modules" -path "*/holdpty/dist/cli.js" 2>/dev/null | head -1)
+if [ -z "$HOLDPTY_CLI" ]; then
+  HOLDPTY_CLI="${PI_HOME}/lib/node_modules/holdpty/dist/cli.js"
+fi
+
+cat > /usr/local/bin/holdpty << WRAPPER
 #!/bin/sh
-exec /opt/pi/bin/node /opt/pi/lib/node_modules/@marcfargas/holdpty/dist/cli.js "$@"
+exec /opt/pi/bin/node "${HOLDPTY_CLI}" "\$@"
 WRAPPER
 chmod +x /usr/local/bin/holdpty
 

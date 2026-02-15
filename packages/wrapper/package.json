@@ -1,0 +1,24 @@
+{
+  "name": "pi-devcontainers",
+  "version": "0.1.0",
+  "description": "Launch dev containers with pi pre-installed. Wrapper for @marcfargas/pi-devcontainers.",
+  "bin": {
+    "pi-devcontainers": "./bin/pi-devcontainers.js",
+    "pidc": "./bin/pi-devcontainers.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "dependencies": {
+    "@marcfargas/pi-devcontainers": "0.1.0"
+  },
+  "keywords": [
+    "pi",
+    "devcontainers",
+    "dev-containers",
+    "docker",
+    "coding-agent"
+  ],
+  "author": "Marc Fargas <marcfargas@users.noreply.github.com>",
+  "license": "MIT"
+}

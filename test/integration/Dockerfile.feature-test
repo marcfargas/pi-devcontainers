@@ -1,0 +1,15 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y curl ca-certificates xz-utils
+
+# Install a "project" node to verify isolation
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+COPY packages/feature/install.sh /tmp/install.sh
+RUN chmod +x /tmp/install.sh
+
+ENV NODEVERSION=22.14.0
+ENV PIVERSION=latest
+
+RUN /tmp/install.sh

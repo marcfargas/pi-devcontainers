@@ -1,0 +1,16 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y curl ca-certificates xz-utils
+
+# Minimal /opt/pi with just node
+RUN ARCH=$(case $(uname -m) in x86_64) echo x64;; aarch64) echo arm64;; esac) \
+    && mkdir -p /opt/pi \
+    && curl -fsSL "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-${ARCH}.tar.xz" \
+    | tar -xJ -C /opt/pi --strip-components=1
+
+COPY packages/feature/setup.sh /opt/pi/setup.sh
+RUN chmod +x /opt/pi/setup.sh
+
+RUN useradd -m testuser
+ENV HOME=/home/testuser
+USER testuser

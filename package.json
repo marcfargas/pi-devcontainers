@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": [
     "packages/cli",
-    "packages/feature"
+    "packages/feature",
+    "packages/wrapper"
   ],
   "scripts": {
     "build": "npm run build -w packages/cli",
