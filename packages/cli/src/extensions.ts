@@ -1,28 +1,21 @@
 /**
- * Detect npm-linked pi extensions and pack them as tarballs.
+ * Detect pi extensions and pack them as tarballs for container use.
  *
- * On the host, pi's global node_modules may contain symlinked extensions
- * (from `npm link`). These won't resolve inside a container.
- * This module:
- * 1. Finds linked extensions in pi's node_modules
- * 2. Runs `npm pack --ignore-scripts` for each
- * 3. Outputs tarballs to a staging directory
+ * Reads pi's settings.json (user-level and project-level) to find
+ * configured extensions. Extensions are local paths that won't resolve
+ * inside a container, so we npm-pack them into tarballs.
  */
 
 import { execSync } from "node:child_process";
 import {
-  readdirSync,
-  lstatSync,
-  readlinkSync,
   mkdirSync,
   existsSync,
-  realpathSync,
   statSync,
   readFileSync,
   writeFileSync,
   copyFileSync,
 } from "node:fs";
-import { join, basename, resolve, dirname } from "node:path";
+import { join, basename, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 
 export interface PackedExtension {
@@ -33,79 +26,64 @@ export interface PackedExtension {
 }
 
 /**
- * Find the directory where pi is globally installed.
- * Returns the node_modules directory containing pi's dependencies.
+ * Read pi's configured extensions from settings.json (user + project).
+ *
+ * Pi stores extensions as paths in:
+ * - User: ~/.pi/agent/settings.json → "extensions"
+ * - Project: <workspace>/.pi/settings.json → "extensions"
+ *
+ * Project extensions are merged with (and override) user extensions.
  */
-function findPiGlobalDir(): string | null {
-  try {
-    // `npm root -g` gives us the global node_modules
-    const globalRoot = execSync("npm root -g", {
-      encoding: "utf-8",
-      timeout: 10000,
-    }).trim();
+export function readPiExtensions(
+  workspaceFolder?: string
+): Array<{ name: string; sourcePath: string }> {
+  const extPaths = new Map<string, string>(); // resolved path → deduped
 
-    // Check if pi is installed there
-    const piDir = join(globalRoot, "@mariozechner", "pi-coding-agent");
-    if (existsSync(piDir)) {
-      return globalRoot;
-    }
+  // 1. User-level settings
+  const userSettings = join(homedir(), ".pi", "agent", "settings.json");
+  collectExtensionsFromSettings(userSettings, extPaths);
 
-    return null;
-  } catch {
-    return null;
+  // 2. Project-level settings (if workspace provided)
+  if (workspaceFolder) {
+    const projectSettings = join(workspaceFolder, ".pi", "settings.json");
+    collectExtensionsFromSettings(projectSettings, extPaths);
   }
-}
 
-/**
- * Detect npm-linked packages in a node_modules directory.
- * A linked package is one whose entry in node_modules is a symlink/junction.
- */
-export function findLinkedExtensions(
-  nodeModulesDir: string
-): Array<{ name: string; linkTarget: string }> {
-  const linked: Array<{ name: string; linkTarget: string }> = [];
+  // Resolve to { name, sourcePath }
+  const results: Array<{ name: string; sourcePath: string }> = [];
+  for (const sourcePath of extPaths.values()) {
+    const pkgJsonPath = join(sourcePath, "package.json");
+    if (!existsSync(pkgJsonPath)) continue;
 
-  if (!existsSync(nodeModulesDir)) return linked;
-
-  const entries = readdirSync(nodeModulesDir);
-
-  for (const entry of entries) {
-    const entryPath = join(nodeModulesDir, entry);
-
-    if (entry.startsWith("@")) {
-      // Scoped package — look inside
-      if (!existsSync(entryPath)) continue;
-      const scopedEntries = readdirSync(entryPath);
-      for (const scopedEntry of scopedEntries) {
-        const scopedPath = join(entryPath, scopedEntry);
-        if (isLinkedPackage(scopedPath)) {
-          const realPath = realpathSync(scopedPath);
-          linked.push({
-            name: `${entry}/${scopedEntry}`,
-            linkTarget: realPath,
-          });
-        }
-      }
-    } else {
-      if (isLinkedPackage(entryPath)) {
-        const realPath = realpathSync(entryPath);
-        linked.push({ name: entry, linkTarget: realPath });
-      }
+    try {
+      const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
+      results.push({ name: pkg.name || basename(sourcePath), sourcePath });
+    } catch {
+      results.push({ name: basename(sourcePath), sourcePath });
     }
   }
 
-  return linked;
+  return results;
 }
 
-/**
- * Check if a path is a symlink or junction (Windows).
- */
-function isLinkedPackage(p: string): boolean {
+function collectExtensionsFromSettings(
+  settingsPath: string,
+  into: Map<string, string>
+): void {
+  if (!existsSync(settingsPath)) return;
+
   try {
-    const stat = lstatSync(p);
-    return stat.isSymbolicLink();
+    const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    const extensions: string[] = settings.extensions ?? [];
+
+    for (const extPath of extensions) {
+      const resolved = resolve(extPath);
+      if (existsSync(resolved)) {
+        into.set(resolved, resolved);
+      }
+    }
   } catch {
-    return false;
+    // Malformed settings — skip silently
   }
 }
 
@@ -205,10 +183,13 @@ function packExtension(
 }
 
 /**
- * Find and pack all linked pi extensions.
+ * Find and pack all pi extensions (from user + project settings).
  * Returns the staging directory path and list of packed extensions.
  */
-export function packLinkedExtensions(stagingDir?: string): {
+export function packLinkedExtensions(
+  workspaceFolder?: string,
+  stagingDir?: string
+): {
   stagingDir: string;
   extensions: PackedExtension[];
 } {
@@ -216,17 +197,16 @@ export function packLinkedExtensions(stagingDir?: string): {
     stagingDir ?? join(tmpdir(), `pi-ext-staging-${Date.now()}`);
   mkdirSync(staging, { recursive: true });
 
-  const globalDir = findPiGlobalDir();
-  if (!globalDir) {
+  const piExtensions = readPiExtensions(workspaceFolder);
+  if (piExtensions.length === 0) {
     return { stagingDir: staging, extensions: [] };
   }
 
-  const linked = findLinkedExtensions(globalDir);
   const extensions: PackedExtension[] = [];
 
-  for (const ext of linked) {
+  for (const ext of piExtensions) {
     try {
-      const packed = packExtension(ext.name, ext.linkTarget, staging);
+      const packed = packExtension(ext.name, ext.sourcePath, staging);
       extensions.push(packed);
     } catch (err) {
       console.error(

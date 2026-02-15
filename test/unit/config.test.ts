@@ -11,7 +11,7 @@ describe("resolveConfig", () => {
     expect(config.writable).toContain("memoria");
     expect(config.extensions).toBe("pack");
     expect(config.defaultImage).toBe(
-      "mcr.microsoft.com/devcontainers/universal:latest"
+      "mcr.microsoft.com/devcontainers/base:ubuntu"
     );
   });
 

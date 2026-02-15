@@ -35,7 +35,7 @@ const DEFAULTS: PiDevcontainerConfig = {
   writable: ["todos", "memoria"],
   extensions: "pack",
   env: {},
-  defaultImage: "mcr.microsoft.com/devcontainers/universal:latest",
+  defaultImage: "mcr.microsoft.com/devcontainers/base:ubuntu",
 };
 
 /**

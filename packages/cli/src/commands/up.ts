@@ -9,9 +9,16 @@
  * 6. Launch pi via holdpty
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  cpSync,
+} from "node:fs";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { type CliOverrides, resolveConfig, resolveEnvVars } from "../config.js";
 import { mergeDevcontainerJson, type DevcontainerJson } from "../merge.js";
 import { normalizePath, pathExists } from "../paths.js";
@@ -21,6 +28,33 @@ import {
   devcontainerUp,
   devcontainerExec,
 } from "../exec.js";
+
+/**
+ * Resolve where the feature source is.
+ * In development (running from source), use local feature directory.
+ * In production (installed via npm), use GHCR reference.
+ */
+function resolveFeatureRef(): {
+  type: "local" | "ghcr";
+  ref: string;
+  path?: string;
+} {
+  // Check if packages/feature exists relative to this file (monorepo dev)
+  // In dev: src/commands/up.ts → ../../.. → packages/cli → ../feature
+  // In dist: dist/commands/up.js → ../../.. → packages/cli → ../feature
+  const thisDir = dirname(fileURLToPath(import.meta.url));
+  const cliPkgRoot = join(thisDir, "..", "..");
+  const localFeature = join(cliPkgRoot, "..", "feature");
+  if (existsSync(join(localFeature, "devcontainer-feature.json"))) {
+    return { type: "local", ref: "./pi-feature", path: localFeature };
+  }
+
+  // Production: use GHCR
+  return {
+    type: "ghcr",
+    ref: "ghcr.io/marcfargas/devcontainer-features/pi:latest",
+  };
+}
 
 export interface UpOptions extends CliOverrides {
   workspaceFolder: string;
@@ -77,7 +111,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   let extensionStagingDir: string | undefined;
   if (config.extensions === "pack") {
     console.log("  ✓ Packing linked extensions...");
-    const { stagingDir, extensions } = packLinkedExtensions();
+    const { stagingDir, extensions } = packLinkedExtensions(workspaceFolder);
     if (extensions.length > 0) {
       extensionStagingDir = stagingDir;
       for (const ext of extensions) {
@@ -100,23 +134,37 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     );
   }
 
-  // 5. Merge configs
+  // 5. Resolve feature source — local (dev) or GHCR (published)
+  const featureRef = resolveFeatureRef();
+  console.log(`  ✓ Feature: ${featureRef.type === "local" ? "local" : featureRef.ref}`);
+
+  // 6. Merge configs
   console.log("  ✓ Merging configuration...");
+
+  // Build temp .devcontainer/ structure (required by devcontainer CLI for local features)
+  const tempDir = join(tmpdir(), `pi-devcontainer-${Date.now()}`);
+  const tempDevcontainerDir = join(tempDir, ".devcontainer");
+  mkdirSync(tempDevcontainerDir, { recursive: true });
+
+  // If local feature, copy it into the temp .devcontainer/ so relative path resolves
+  let mergeFeatureRef = featureRef.ref;
+  if (featureRef.type === "local") {
+    const destFeatureDir = join(tempDevcontainerDir, "pi-feature");
+    cpSync(featureRef.path!, destFeatureDir, { recursive: true });
+    mergeFeatureRef = "./pi-feature";
+  }
+
   const merged = mergeDevcontainerJson(
     projectConfig ?? {},
     config,
     resolvedEnv,
     {
-      // For now, use a local path feature ref — will be GHCR later
-      featureRef: "./feature",
+      featureRef: mergeFeatureRef,
       extensionStagingDir,
     }
   );
 
-  // 6. Write merged config to temp file
-  const tempDir = join(tmpdir(), `pi-devcontainer-${Date.now()}`);
-  mkdirSync(tempDir, { recursive: true });
-  const tempConfigPath = join(tempDir, "devcontainer.json");
+  const tempConfigPath = join(tempDevcontainerDir, "devcontainer.json");
   writeFileSync(tempConfigPath, JSON.stringify(merged, null, 2));
   console.log(`  ✓ Wrote merged config: ${tempConfigPath}`);
 
