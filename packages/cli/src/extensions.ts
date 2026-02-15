@@ -20,6 +20,7 @@ import {
   statSync,
   readFileSync,
   writeFileSync,
+  copyFileSync,
 } from "node:fs";
 import { join, basename, resolve, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -186,7 +187,7 @@ function packExtension(
   // Save to cache
   const cachedTarball = join(cache, tarballName);
   try {
-    execSync(`cp "${tarballPath}" "${cachedTarball}"`, { timeout: 5000 });
+    copyFileSync(tarballPath, cachedTarball);
     writeFileSync(
       cacheMetaPath,
       JSON.stringify({ cacheKey, tarballPath: cachedTarball })
