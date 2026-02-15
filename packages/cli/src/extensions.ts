@@ -170,11 +170,12 @@ function packExtension(
 
   // Pack the extension
   const result = execSync(
-    `npm pack --ignore-scripts --pack-destination "${stagingDir}"`,
+    `npm pack --ignore-scripts --pack-destination "${stagingDir}" 2>/dev/null`,
     {
       cwd: sourcePath,
       encoding: "utf-8",
       timeout: 30000,
+      stdio: ["pipe", "pipe", "pipe"],
     }
   ).trim();
 
