@@ -66,6 +66,38 @@ function readSettings(path: string): Record<string, unknown> | null {
 }
 
 /**
+ * Walk up from a directory to find the monorepo root.
+ *
+ * A monorepo root is a directory with a package.json containing a "workspaces" field.
+ * Returns the monorepo root path, or the original path if not inside a monorepo.
+ * This ensures node_modules resolution works for hoisted dependencies.
+ */
+function findMonorepoRoot(dir: string): string {
+  let current = resolve(dir);
+  const root = resolve(sep); // filesystem root
+
+  while (current !== root) {
+    const parent = resolve(current, "..");
+    if (parent === current) break; // reached filesystem root
+
+    const pkgPath = join(parent, "package.json");
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+        if (pkg.workspaces) {
+          return parent;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    current = parent;
+  }
+
+  return dir; // not in a monorepo
+}
+
+/**
  * Collect unique paths from extensions + skills in settings.json.
  * Returns the paths that need mounting and a patched settings object.
  */
@@ -110,7 +142,14 @@ export function resolveSettingsForContainer(
     });
   };
 
-  for (const p of [...extensions, ...projectExtensions]) addPath(p);
+  // Extensions: resolve to monorepo root so hoisted node_modules are accessible
+  for (const p of [...extensions, ...projectExtensions]) {
+    const resolved = resolve(p);
+    if (existsSync(resolved)) {
+      addPath(findMonorepoRoot(resolved));
+    }
+  }
+  // Skills: mount as-is (no node_modules deps)
   for (const p of [...skills, ...projectSkills]) addPath(p);
 
   if (allPaths.size === 0) {
@@ -127,15 +166,14 @@ export function resolveSettingsForContainer(
     const patched = { ...settings };
 
     if (extensions.length > 0) {
+      // Keep original extension paths in settings (pi needs the package dir,
+      // not the monorepo root) — just convert to container POSIX paths
       patched.extensions = extensions
         .filter((p) => {
           const resolved = resolve(p);
           return !(resolved.startsWith(piDir + sep) || resolved.startsWith(piDir + "/"));
         })
-        .map((p) => {
-          const resolved = resolve(p);
-          return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
-        });
+        .map((p) => toContainerPath(resolve(p)));
     }
 
     if (skills.length > 0) {
