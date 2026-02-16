@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   mergeDevcontainerJson,
   chainPostCreateCommand,
-  generateMinimalDevcontainerJson,
   type DevcontainerJson,
 } from "../../packages/cli/src/merge.js";
 import type { PiDevcontainerConfig } from "../../packages/cli/src/config.js";
@@ -166,7 +165,7 @@ describe("mergeDevcontainerJson", () => {
 
     // Find the RO bind mount for ~/.pi
     const hostMount = merged.mounts!.find(
-      (m) => typeof m === "object" && m.target === "/home/vscode/.pi"
+      (m) => typeof m === "object" && m.target === "/root/.pi"
     );
     expect(hostMount).toBeDefined();
   });
@@ -176,10 +175,10 @@ describe("mergeDevcontainerJson", () => {
 
     const mounts = merged.mounts as Array<{ type: string; source: string; target: string }>;
     const todoMount = mounts.find((m) =>
-      typeof m === "object" && m.target === "/home/vscode/.pi/todos"
+      typeof m === "object" && m.target === "/root/.pi/todos"
     );
     const memoriaMount = mounts.find((m) =>
-      typeof m === "object" && m.target === "/home/vscode/.pi/memoria"
+      typeof m === "object" && m.target === "/root/.pi/memoria"
     );
 
     expect(todoMount).toBeDefined();
@@ -256,30 +255,28 @@ describe("mergeDevcontainerJson", () => {
 
     const mounts = merged.mounts as Array<{ target: string; source: string }>;
     const settingsMount = mounts.find((m) =>
-      typeof m === "object" && m.target === "/home/vscode/.pi/agent/settings.json"
+      typeof m === "object" && m.target === "/root/.pi/agent/settings.json"
     );
     expect(settingsMount).toBeDefined();
   });
 });
 
-describe("generateMinimalDevcontainerJson", () => {
+describe("merge with empty project (no devcontainer.json)", () => {
   it("generates config with default image", () => {
-    const config = generateMinimalDevcontainerJson(DEFAULT_CONFIG, {});
+    const config = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
     expect(config.image).toBe(
       "mcr.microsoft.com/devcontainers/base:ubuntu"
     );
   });
 
   it("includes pi feature", () => {
-    const config = generateMinimalDevcontainerJson(DEFAULT_CONFIG, {});
+    const config = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
     const featureKeys = Object.keys(config.features ?? {});
     expect(featureKeys.length).toBe(1);
   });
 
-  it("includes mounts (no postCreateCommand without extensions)", () => {
-    const config = generateMinimalDevcontainerJson(DEFAULT_CONFIG, {});
+  it("includes mounts", () => {
+    const config = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
     expect(config.mounts!.length).toBeGreaterThan(0);
-    // Without extensions, no postCreateCommand is added
-    expect(config.postCreateCommand).toBeUndefined();
   });
 });

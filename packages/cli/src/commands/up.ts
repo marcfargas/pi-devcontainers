@@ -106,15 +106,14 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     );
   }
 
-  // 5. Merge configs
-  console.log("  ✓ Merging configuration...");
-
-  // First pass without pi mounts to get the merged remoteUser
+  // 5. Determine container user and home directory
   const remoteUser = (projectConfig?.remoteUser as string | undefined) ?? undefined;
   const containerHome = remoteUser
     ? (remoteUser === "root" ? "/root" : `/home/${remoteUser}`)
     : "/root"; // devcontainer default when remoteUser is not set
 
+  // 6. Merge configs
+  console.log("  ✓ Merging configuration...");
   const merged = mergeDevcontainerJson(
     projectConfig ?? {},
     config,
@@ -134,7 +133,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   writeFileSync(tempConfigPath, JSON.stringify(merged, null, 2));
   console.log(`  ✓ Wrote merged config: ${tempConfigPath}`);
 
-  // 6. devcontainer up
+  // 7. devcontainer up
   console.log("  ✓ Starting devcontainer...");
   const containerId = devcontainerUp({
     workspaceFolder,
@@ -157,7 +156,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     startedAt: new Date().toISOString(),
   });
 
-  // 9. Launch pi via holdpty using docker exec
+  // 9. Launch pi via holdpty
   if (config.mode === "holdpty") {
     console.log("  ✓ Launching pi via holdpty...");
     try {

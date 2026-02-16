@@ -1,6 +1,6 @@
 # Deviations from Standard Dev Containers
 
-This document lists every way `pidc` deviates from the standard `devcontainer` CLI behaviour. If you're debugging something unexpected inside a pidc-managed container, start here.
+Every way `pidc` deviates from the standard `devcontainer` CLI behaviour. Start here when debugging something unexpected inside a pidc-managed container.
 
 ## 1. Docker exec instead of devcontainer exec
 

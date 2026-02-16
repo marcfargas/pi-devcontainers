@@ -5,7 +5,7 @@
  * - features: add pi feature
  * - mounts: append pi mounts
  * - remoteEnv: merge (pi vars don't overwrite project vars)
- * - postCreateCommand: untouched (pi uses mounts, no setup.sh chaining needed)
+ * - postCreateCommand: chain symlink fixup on Windows
  * - Everything else: untouched
  */
 
@@ -48,8 +48,8 @@ function piFeatureEntry(config: PiDevcontainerConfig): Record<string, unknown> {
  * 1. RO bind mount of host ~/.pi → container user's ~/.pi (config, skills, etc.)
  * 2. Writable volume overlays on top for dirs that need writes (todos, memoria)
  *
- * The remoteUser's home is typically /home/vscode for devcontainer base images.
- * We use remoteEnv to set PI_USER_HOME so setup.sh can find the right path.
+ * The container home is derived from remoteUser: root → /root, others → /home/<user>.
+ * Defaults to /root when remoteUser is not set (devcontainer default).
  */
 function piMounts(
   config: PiDevcontainerConfig,
@@ -130,7 +130,7 @@ export function mergeDevcontainerJson(
   options?: {
     /** Feature reference (e.g., local path or ghcr.io/...) */
     featureRef?: string;
-    /** Container user's home directory (default: /home/vscode) */
+    /** Container user's home directory (default: /root) */
     containerHome?: string;
     /** Extension/skill source mounts (RO bind mounts at same path) */
     settingsMounts?: PiSettingsMount[];
@@ -139,7 +139,7 @@ export function mergeDevcontainerJson(
   }
 ): DevcontainerJson {
   const merged: DevcontainerJson = { ...project };
-  const containerHome = options?.containerHome ?? "/home/vscode";
+  const containerHome = options?.containerHome ?? "/root";
 
   // If no image or build, add default image
   if (!merged.image && !merged.build) {
@@ -219,16 +219,3 @@ export function mergeDevcontainerJson(
   return merged;
 }
 
-/**
- * Generate a minimal devcontainer.json for projects that have none.
- */
-export function generateMinimalDevcontainerJson(
-  config: PiDevcontainerConfig,
-  resolvedEnv: Record<string, string>,
-  options?: {
-    featureRef?: string;
-    extensionStagingDir?: string;
-  }
-): DevcontainerJson {
-  return mergeDevcontainerJson({}, config, resolvedEnv, options);
-}
