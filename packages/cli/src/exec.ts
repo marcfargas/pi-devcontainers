@@ -106,31 +106,67 @@ export interface DevcontainerUpResult {
   remoteWorkspaceFolder?: string;
 }
 
-function parseDevcontainerUpResult(result: string): DevcontainerUpResult {
+/**
+ * Extract the JSON object from devcontainer CLI output.
+ *
+ * The CLI always writes a single JSON object to stdout, but when lifecycle
+ * hooks (postCreateCommand, etc.) run, their log output may be interleaved
+ * on previous lines.  We find the last line that looks like a JSON object
+ * and parse that — falling back to the full string for clean output.
+ */
+export function extractJson(raw: string): unknown | null {
+  // Fast path: entire output is valid JSON (no lifecycle hook output)
   try {
-    const output = JSON.parse(result);
-    if (output.containerId) {
-      if (output.outcome !== "success") {
-        console.warn(
-          `  ⚠ Container started but postCreateCommand failed (non-fatal)`
-        );
-      }
-      return {
-        containerId: output.containerId,
-        remoteWorkspaceFolder: output.remoteWorkspaceFolder,
-      };
-    }
-    throw new Error(
-      `devcontainer up failed: ${output.message || "no container ID in output"}`
-    );
-  } catch (err) {
-    if (err instanceof SyntaxError) {
-      const match = result.match(/"containerId":\s*"([^"]+)"/);
-      if (match) return { containerId: match[1] };
-      throw new Error(`devcontainer up returned unexpected output: ${result.substring(0, 200)}`);
-    }
-    throw err;
+    return JSON.parse(raw);
+  } catch {
+    // Fall through to line-by-line extraction
   }
+
+  // Find the last line that starts with '{' — the CLI JSON is always last
+  const lines = raw.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line.startsWith("{")) {
+      try {
+        return JSON.parse(line);
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function parseDevcontainerUpResult(result: string): DevcontainerUpResult {
+  const output = extractJson(result) as Record<string, unknown> | null;
+
+  if (output && output.containerId) {
+    if (output.outcome !== "success") {
+      console.warn(
+        `  ⚠ Container started but postCreateCommand failed (non-fatal)`
+      );
+    }
+    return {
+      containerId: output.containerId as string,
+      remoteWorkspaceFolder: output.remoteWorkspaceFolder as string | undefined,
+    };
+  }
+
+  // Last resort: regex extraction when JSON parsing failed entirely
+  const idMatch = result.match(/"containerId":\s*"([^"]+)"/);
+  if (idMatch) {
+    const wsMatch = result.match(/"remoteWorkspaceFolder":\s*"([^"]+)"/);
+    return {
+      containerId: idMatch[1],
+      remoteWorkspaceFolder: wsMatch?.[1],
+    };
+  }
+
+  const message = (output as Record<string, unknown>)?.message ?? "no container ID in output";
+  throw new Error(
+    `devcontainer up failed: ${message}`
+  );
 }
 
 // ─── Docker direct (for exec/stop/rm) ───────────────────────────────

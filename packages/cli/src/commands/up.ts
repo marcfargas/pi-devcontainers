@@ -51,9 +51,11 @@ function readProjectDevcontainerJson(
     if (pathExists(candidate)) {
       try {
         const raw = readFileSync(candidate, "utf-8");
+        // Strip JSON comments (// and /* */) and trailing commas (JSONC → JSON)
         const stripped = raw
           .replace(/\/\/.*$/gm, "")
-          .replace(/\/\*[\s\S]*?\*\//g, "");
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/,\s*([}\]])/g, "$1");
         return JSON.parse(stripped) as DevcontainerJson;
       } catch (err) {
         console.error(
