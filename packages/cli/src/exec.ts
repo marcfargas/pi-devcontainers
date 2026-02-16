@@ -47,24 +47,47 @@ export function devcontainerUp(opts: DevcontainerUpOptions): string {
     args.push("--build-no-cache");
   }
 
-  const result = execSync(`npx ${args.join(" ")}`, {
-    encoding: "utf-8",
-    timeout: 600000, // 10 min for image build
-    stdio: ["pipe", "pipe", "inherit"],
-  });
+  let result: string;
+  try {
+    result = execSync(`npx ${args.join(" ")}`, {
+      encoding: "utf-8",
+      timeout: 600000, // 10 min for image build
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+  } catch (err: unknown) {
+    // devcontainer CLI exits non-zero when postCreateCommand fails,
+    // but the container itself may have started fine.
+    // Try to extract the container ID from stdout.
+    const execErr = err as { stdout?: string; stderr?: string };
+    result = execErr.stdout ?? "";
+    if (!result) {
+      throw new Error(
+        `devcontainer up failed: ${execErr.stderr?.substring(0, 500) ?? "unknown error"}`
+      );
+    }
+  }
 
   // Parse the JSON output to get container ID
+  return parseDevcontainerUpResult(result);
+}
+
+function parseDevcontainerUpResult(result: string): string {
   try {
     const output = JSON.parse(result);
-    if (output.outcome === "success") {
+    if (output.containerId) {
+      if (output.outcome !== "success") {
+        console.warn(
+          `  ⚠ Container started but postCreateCommand failed (non-fatal)`
+        );
+      }
       return output.containerId;
     }
     throw new Error(
-      `devcontainer up failed: ${output.message || "unknown error"}`
+      `devcontainer up failed: ${output.message || "no container ID in output"}`
     );
   } catch (err) {
     if (err instanceof SyntaxError) {
-      // Not JSON — might still have succeeded, try to extract ID
+      // Not JSON — try to extract ID
       const match = result.match(/"containerId":\s*"([^"]+)"/);
       if (match) return match[1];
       throw new Error(`devcontainer up returned unexpected output: ${result.substring(0, 200)}`);
