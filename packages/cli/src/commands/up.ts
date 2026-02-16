@@ -117,11 +117,20 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     );
   }
 
-  // 5. Determine container home directory from remoteUser
-  const remoteUser = (projectConfig?.remoteUser as string | undefined) ?? undefined;
-  const containerHome = remoteUser
-    ? (remoteUser === "root" ? "/root" : `/home/${remoteUser}`)
-    : "/root"; // devcontainer default when remoteUser is not set
+  // 5. Determine candidate container homes.
+  // Effective runtime user can differ from project devcontainer.json defaults.
+  // Mount ~/.pi into common homes so pi can read host config whichever user
+  // devcontainer exec resolves to.
+  const configuredUser = (
+    (projectConfig?.remoteUser as string | undefined)
+    ?? (projectConfig?.containerUser as string | undefined)
+    ?? (projectConfig?.user as string | undefined)
+  );
+  const primaryHome = configuredUser
+    ? (configuredUser === "root" ? "/root" : `/home/${configuredUser}`)
+    : "/root";
+  const additionalHomes = ["/root", "/home/vscode", "/home/node"]
+    .filter((home) => home !== primaryHome);
 
   // 6. Merge configs
   console.log("  ✓ Merging configuration...");
@@ -131,7 +140,8 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     resolvedEnv,
     {
       featureRef: FEATURE_REF,
-      containerHome,
+      containerHome: primaryHome,
+      additionalContainerHomes: additionalHomes,
       settingsMounts: settingsResolution.mounts,
       patchedSettingsPath: settingsResolution.patchedSettingsPath ?? undefined,
       workspaceFolderBasename: basename(workspaceFolder),

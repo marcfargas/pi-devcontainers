@@ -284,6 +284,24 @@ describe("mergeDevcontainerJson", () => {
     );
     expect(settingsMount).toBeDefined();
   });
+
+  it("can mount ~/.pi into additional container homes", () => {
+    const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {}, {
+      containerHome: "/root",
+      additionalContainerHomes: ["/home/node", "/home/vscode"],
+    });
+
+    const mounts = merged.mounts as Array<{ target: string; source: string }>;
+    const nodePi = mounts.find((m) =>
+      typeof m === "object" && m.target === "/home/node/.pi"
+    );
+    const vscodePi = mounts.find((m) =>
+      typeof m === "object" && m.target === "/home/vscode/.pi"
+    );
+
+    expect(nodePi).toBeDefined();
+    expect(vscodePi).toBeDefined();
+  });
 });
 
 describe("merge with empty project (no devcontainer.json)", () => {

@@ -45,38 +45,40 @@ function piFeatureEntry(config: PiDevcontainerConfig): Record<string, unknown> {
  * Generate mounts for pi's needs.
  *
  * Strategy: layered mounts.
- * 1. RO bind mount of host ~/.pi → container user's ~/.pi (config, skills, etc.)
- * 2. Writable volume overlays on top for dirs that need writes (todos, memoria)
+ * 1. RO bind mount of host ~/.pi → container ~/.pi
+ * 2. Writable overlays on top for dirs that need writes (todos, memoria)
  *
- * The container home is derived from remoteUser: root → /root, others → /home/<user>.
- * Defaults to /root when remoteUser is not set (devcontainer default).
+ * We can mount into multiple home paths because runtime user may differ from
+ * project devcontainer.json (e.g. `node`, `vscode`, `root`).
  */
 function piMounts(
   config: PiDevcontainerConfig,
-  containerHome: string
+  containerHomes: string[]
 ): MountObject[] {
   const piDir = piConfigDir();
-  const containerPiDir = `${containerHome}/.pi`;
+  const homes = Array.from(new Set(containerHomes.filter(Boolean)));
 
-  const mounts: MountObject[] = [
+  const mounts: MountObject[] = [];
+
+  for (const home of homes) {
+    const containerPiDir = `${home}/.pi`;
+
     // RO bind mount: host ~/.pi → container ~/.pi
-    {
+    mounts.push({
       type: "bind",
       source: dockerMountPath(piDir),
       target: containerPiDir,
       readonly: "true",
-    },
-  ];
-
-  // Writable bind mount overlays on top of the RO bind mount.
-  // These are RW bind mounts of the specific host directories so the container
-  // can read existing content AND write back to the host.
-  for (const dir of config.writable) {
-    mounts.push({
-      type: "bind",
-      source: dockerMountPath(`${piDir}/${dir}`),
-      target: `${containerPiDir}/${dir}`,
     });
+
+    // Writable bind mount overlays on top of the RO bind mount.
+    for (const dir of config.writable) {
+      mounts.push({
+        type: "bind",
+        source: dockerMountPath(`${piDir}/${dir}`),
+        target: `${containerPiDir}/${dir}`,
+      });
+    }
   }
 
   return mounts;
@@ -132,8 +134,10 @@ export function mergeDevcontainerJson(
   options?: {
     /** Feature reference (e.g., local path or ghcr.io/...) */
     featureRef?: string;
-    /** Container user's home directory (default: /root) */
+    /** Primary container home directory (default: /root) */
     containerHome?: string;
+    /** Additional candidate container home directories */
+    additionalContainerHomes?: string[];
     /** Extension/skill source mounts (RO bind mounts at same path) */
     settingsMounts?: PiSettingsMount[];
     /** Path to patched settings.json (single-file bind mount over original) */
@@ -144,6 +148,10 @@ export function mergeDevcontainerJson(
 ): DevcontainerJson {
   const merged: DevcontainerJson = { ...project };
   const containerHome = options?.containerHome ?? "/root";
+  const containerHomes = Array.from(new Set([
+    containerHome,
+    ...(options?.additionalContainerHomes ?? []),
+  ]));
 
   // If no image or build, add default image
   if (!merged.image && !merged.build) {
@@ -169,7 +177,7 @@ export function mergeDevcontainerJson(
 
   // Append mounts — layered: RO bind for ~/.pi, writable volumes on top
   const existingMounts = merged.mounts ?? [];
-  const newMounts = piMounts(config, containerHome);
+  const newMounts = piMounts(config, containerHomes);
 
   // Mount each extension/skill source dir at the same POSIX path (RO)
   if (options?.settingsMounts) {
@@ -185,12 +193,14 @@ export function mergeDevcontainerJson(
 
   // Mount patched settings.json over the original (single-file bind mount)
   if (options?.patchedSettingsPath) {
-    const containerPiDir = `${containerHome}/.pi`;
-    newMounts.push({
-      type: "bind",
-      source: dockerMountPath(options.patchedSettingsPath),
-      target: `${containerPiDir}/agent/settings.json`,
-    });
+    for (const home of containerHomes) {
+      const containerPiDir = `${home}/.pi`;
+      newMounts.push({
+        type: "bind",
+        source: dockerMountPath(options.patchedSettingsPath),
+        target: `${containerPiDir}/agent/settings.json`,
+      });
+    }
   }
 
   merged.mounts = [...existingMounts, ...newMounts];
