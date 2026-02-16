@@ -1,6 +1,6 @@
 {
   "id": "pi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "Pi Coding Agent",
   "description": "Installs pi coding agent with an isolated Node.js runtime in /opt/pi",
   "documentationURL": "https://github.com/marcfargas/pi-devcontainers",

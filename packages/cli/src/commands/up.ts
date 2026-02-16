@@ -25,7 +25,7 @@ import {
   devcontainerExec,
 } from "../exec.js";
 
-const FEATURE_REF = "ghcr.io/marcfargas/devcontainer-features/pi:latest";
+const FEATURE_REF = "ghcr.io/marcfargas/devcontainer-features/pi:0";
 
 export interface UpOptions extends CliOverrides {
   workspaceFolder: string;
