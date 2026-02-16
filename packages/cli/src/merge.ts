@@ -183,8 +183,15 @@ export function mergeDevcontainerJson(
   merged.mounts = [...existingMounts, ...newMounts];
 
   // Merge remoteEnv (pi vars don't overwrite project vars)
+  // Ensure terminal/locale env vars are set for proper TUI rendering
+  const piEnv: Record<string, string> = {
+    TERM: "xterm-256color",
+    COLORTERM: "truecolor",
+    LANG: "C.UTF-8",
+    ...resolvedEnv,
+  };
   const existingEnv = merged.remoteEnv ?? {};
-  merged.remoteEnv = { ...resolvedEnv, ...existingEnv };
+  merged.remoteEnv = { ...piEnv, ...existingEnv };
 
   // On Windows, Docker Desktop rewrites bind-mount symlink targets with a
   // /mnt/host/ prefix (e.g. /c/dev/foo → /mnt/host/c/dev/foo). These paths
