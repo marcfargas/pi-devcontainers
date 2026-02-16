@@ -1,35 +1,43 @@
 /**
  * `pi-devcontainers status` — List running pi devcontainers.
+ *
+ * Shows containers from the state file, cross-referenced with Docker
+ * to show actual running status.
  */
 
-import { execSync } from "node:child_process";
+import { listContainers, removeContainer } from "../state.js";
+import { isContainerRunning } from "../exec.js";
 
 export async function commandStatus(): Promise<void> {
   console.log("📋 Pi devcontainers:\n");
 
-  try {
-    // Find containers with devcontainer labels
-    const result = execSync(
-      'docker ps --filter "label=devcontainer.local_folder" --format "{{.ID}}\t{{.Label \\"devcontainer.local_folder\\"}}\t{{.Status}}\t{{.CreatedAt}}"',
-      { encoding: "utf-8", timeout: 10000 }
-    ).trim();
+  const containers = listContainers();
 
-    if (!result) {
-      console.log("  (no running pi devcontainers)");
-      return;
+  if (containers.length === 0) {
+    console.log("  (no tracked pi devcontainers)");
+    return;
+  }
+
+  console.log(
+    "  ID            Status     Started              Workspace"
+  );
+  console.log(
+    "  ──────────────────────────────────────────────────────────────────────"
+  );
+
+  for (const c of containers) {
+    const shortId = c.containerId.substring(0, 12);
+    const running = isContainerRunning(c.containerId);
+    const status = running ? "🟢 running" : "⚫ stopped";
+    const started = c.startedAt
+      ? new Date(c.startedAt).toLocaleString()
+      : "unknown";
+
+    console.log(`  ${shortId}  ${status}  ${started.padEnd(20)}  ${c.workspaceFolder}`);
+
+    // Clean up stale entries
+    if (!running) {
+      removeContainer(c.workspaceFolder);
     }
-
-    console.log("  ID            Workspace                    Status");
-    console.log("  ─────────────────────────────────────────────────────");
-
-    for (const line of result.split("\n")) {
-      const [id, folder, status, created] = line.split("\t");
-      console.log(`  ${id?.substring(0, 12)}  ${folder?.padEnd(28)}  ${status}`);
-    }
-  } catch (err) {
-    console.error(
-      `Failed to list containers: ${err instanceof Error ? err.message : err}`
-    );
-    process.exitCode = 1;
   }
 }

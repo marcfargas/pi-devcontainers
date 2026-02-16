@@ -5,7 +5,8 @@
  * 2. Resolve extensions/skills from pi settings
  * 3. Merge into a temp devcontainer.json (project config never modified)
  * 4. devcontainer up --workspace-folder <project> --config <temp>
- * 5. Launch pi via holdpty
+ * 5. Launch pi via holdpty (using docker exec directly)
+ * 6. Save state for attach/down
  */
 
 import {
@@ -22,8 +23,10 @@ import { resolveSettingsForContainer } from "../extensions.js";
 import {
   ensureDevcontainersCli,
   devcontainerUp,
-  devcontainerExec,
+  dockerExec,
+  isContainerRunning,
 } from "../exec.js";
+import { saveContainer } from "../state.js";
 
 const FEATURE_REF = "ghcr.io/marcfargas/devcontainer-features/pi:0";
 
@@ -47,7 +50,6 @@ function readProjectDevcontainerJson(
     if (pathExists(candidate)) {
       try {
         const raw = readFileSync(candidate, "utf-8");
-        // Strip JSON comments
         const stripped = raw
           .replace(/\/\/.*$/gm, "")
           .replace(/\/\*[\s\S]*?\*\//g, "");
@@ -117,47 +119,54 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     }
   );
 
-  // Write merged config to a temp directory.
-  // devcontainer CLI requires --config to point to a file named devcontainer.json
+  // Write merged config to a temp directory
   const tempConfigDir = join(tmpdir(), `pidc-${Date.now()}`);
   mkdirSync(tempConfigDir, { recursive: true });
   const tempConfigPath = join(tempConfigDir, "devcontainer.json");
   writeFileSync(tempConfigPath, JSON.stringify(merged, null, 2));
   console.log(`  ✓ Wrote merged config: ${tempConfigPath}`);
+
+  // 6. devcontainer up
   console.log("  ✓ Starting devcontainer...");
   const containerId = devcontainerUp({
-    workspaceFolder: workspaceFolder,
+    workspaceFolder,
     configPath: tempConfigPath,
     rebuild: opts.rebuild,
   });
-  console.log(`  ✓ Container started: ${containerId.substring(0, 12)}`);
+  const shortId = containerId.substring(0, 12);
+  console.log(`  ✓ Container started: ${shortId}`);
 
-  // 8. Launch pi via holdpty inside the container
+  // 7. Save state for attach/down/status
+  saveContainer({
+    containerId,
+    workspaceFolder,
+    configDir: tempConfigDir,
+    settingsDir: settingsResolution.patchedSettingsPath
+      ? join(settingsResolution.patchedSettingsPath, "..")
+      : undefined,
+    startedAt: new Date().toISOString(),
+  });
+
+  // 8. Launch pi via holdpty using docker exec
   if (config.mode === "holdpty") {
     console.log("  ✓ Launching pi via holdpty...");
     try {
-      devcontainerExec({
-        workspaceFolder: workspaceFolder,
-        command: [
-          "holdpty",
-          "launch",
-          "--bg",
-          "--name",
-          "pi",
-          "--",
-          "pi",
-        ],
-      });
+      if (!isContainerRunning(containerId)) {
+        throw new Error("Container is not running");
+      }
+      dockerExec(containerId, [
+        "holdpty", "launch", "--bg", "--name", "pi", "--", "pi",
+      ]);
       console.log("  ✓ Pi session started (holdpty)");
       console.log(
-        `\n  Attach with: pidc attach --workspace-folder "${opts.workspaceFolder}"`
+        `\n  Attach with: pidc attach -w "${opts.workspaceFolder}"`
       );
     } catch (err) {
       console.error(
         `  ⚠ Failed to launch pi via holdpty: ${err instanceof Error ? err.message : err}`
       );
       console.log(
-        `  You can manually exec into the container:\n  devcontainer exec --workspace-folder "${workspaceFolder}" pi`
+        `  You can manually exec into the container:\n    docker exec -it ${shortId} pi`
       );
     }
   }
