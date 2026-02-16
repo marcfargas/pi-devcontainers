@@ -1,5 +1,6 @@
 {
   "name": "pi-devcontainers-root",
+  "version": "0.0.0",
   "private": true,
   "workspaces": [
     "packages/cli",
@@ -11,11 +12,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "lint": "tsc --noEmit -p packages/cli/tsconfig.json"
+    "lint": "tsc --noEmit -p packages/cli/tsconfig.json",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish"
   },
   "devDependencies": {
-    "vitest": "^3.0.0",
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^3.0.0"
   }
 }
