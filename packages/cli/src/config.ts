@@ -49,10 +49,11 @@ function readConfigFile(configPath: string, label: string): Partial<PiDevcontain
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    // Strip JSON comments (// and /* */)
+    // Strip JSON comments (// and /* */) and trailing commas (JSONC → JSON)
     const stripped = raw
       .replace(/\/\/.*$/gm, "")
-      .replace(/\/\*[\s\S]*?\*\//g, "");
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/,\s*([}\]])/g, "$1");
     return JSON.parse(stripped) as Partial<PiDevcontainerConfig>;
   } catch (err) {
     console.error(
