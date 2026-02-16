@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "lint": "tsc --noEmit -p packages/cli/tsconfig.json",
     "changeset": "changeset",
     "version-packages": "changeset version",
