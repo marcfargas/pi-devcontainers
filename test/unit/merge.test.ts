@@ -189,6 +189,11 @@ describe("mergeDevcontainerJson", () => {
     expect(memoriaMount!.readonly).toBeUndefined();
   });
 
+  it("sets PI_DEVCONTAINER=1 in remoteEnv", () => {
+    const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
+    expect(merged.remoteEnv!.PI_DEVCONTAINER).toBe("1");
+  });
+
   it("merges remoteEnv without overwriting project vars", () => {
     const project: DevcontainerJson = {
       image: "node:20",

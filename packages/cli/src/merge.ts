@@ -187,6 +187,7 @@ export function mergeDevcontainerJson(
   // Merge remoteEnv (pi vars don't overwrite project vars)
   // Ensure terminal/locale env vars are set for proper TUI rendering
   const piEnv: Record<string, string> = {
+    PI_DEVCONTAINER: "1",
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
     LANG: "C.UTF-8",
