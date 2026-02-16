@@ -6,8 +6,8 @@ describe("normalizePath", () => {
   it("resolves relative paths to absolute", () => {
     const result = normalizePath("./foo/bar");
     expect(result).toContain("foo/bar");
-    // Should be absolute
-    expect(result).toMatch(/^[A-Z]:\//i); // Windows: C:/... or posix: /...
+    // Should be absolute — Windows: C:/... or POSIX: /...
+    expect(result).toMatch(/^([A-Z]:\/|\/)/i);
   });
 
   it("normalizes backslashes to forward slashes", () => {

@@ -25,17 +25,20 @@ export function normalizePath(inputPath: string): string {
     p = p.replace(/^~/, homedir());
   }
 
-  // Git Bash /c/... style → C:/...
-  const gitBashMatch = p.match(/^\/([a-zA-Z])\/(.*)/);
-  if (gitBashMatch) {
-    p = `${gitBashMatch[1].toUpperCase()}:/${gitBashMatch[2]}`;
+  // Git Bash /c/... style → C:/... (Windows only — on Linux /c/ is a real path)
+  if (process.platform === "win32") {
+    const gitBashMatch = p.match(/^\/([a-zA-Z])\/(.*)/);
+    if (gitBashMatch) {
+      p = `${gitBashMatch[1].toUpperCase()}:/${gitBashMatch[2]}`;
+    }
   }
 
   // Resolve to absolute
   p = resolve(p);
 
   // Normalize separators to forward slash (for Docker/Linux compat)
-  return p.split(sep).join("/");
+  // Always replace backslashes — covers Windows sep and any embedded backslashes
+  return p.replace(/\\/g, "/");
 }
 
 /**
