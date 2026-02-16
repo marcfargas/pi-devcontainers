@@ -127,6 +127,13 @@ function parseDevcontainerUpResult(result: string): string {
 
 // ─── Docker direct (for exec/stop/rm) ───────────────────────────────
 
+/** Env vars to inject into every docker exec for proper TUI rendering. */
+const DOCKER_EXEC_ENV = [
+  "-e", "TERM=xterm-256color",
+  "-e", "COLORTERM=truecolor",
+  "-e", "LANG=C.UTF-8",
+];
+
 /**
  * Check if a container is running.
  */
@@ -147,10 +154,11 @@ export function isContainerRunning(containerId: string): boolean {
  * If user is specified, runs as that user; otherwise uses the container's default.
  */
 export function dockerExec(containerId: string, command: string[], user?: string): string {
-  const userArgs = user ? `-u ${user}` : "";
-  const escaped = command.map(c => `"${c.replace(/"/g, '\\"')}"`).join(" ");
+  const args = ["exec", ...DOCKER_EXEC_ENV];
+  if (user) args.push("-u", user);
+  args.push(containerId, ...command);
   return execSync(
-    `docker exec ${userArgs} "${containerId}" ${escaped}`,
+    `docker ${args.map(a => `"${a}"`).join(" ")}`,
     {
       encoding: "utf-8",
       timeout: 60000,
@@ -169,7 +177,7 @@ export function dockerExecInteractive(
   user?: string,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const args = ["exec", "-it"];
+    const args = ["exec", "-it", ...DOCKER_EXEC_ENV];
     if (user) args.push("-u", user);
     args.push(containerId, ...command);
 
