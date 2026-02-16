@@ -35,6 +35,10 @@ export interface UpOptions extends CliOverrides {
   verbose?: boolean;
 }
 
+function shQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
 function parseJsoncObject<T>(raw: string, label: string): T {
   const errors: ParseError[] = [];
   const parsed = parse(raw, errors, {
@@ -148,6 +152,10 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     }
   );
 
+  const remoteWorkspaceFolder = typeof merged.workspaceFolder === "string"
+    ? merged.workspaceFolder
+    : `/workspaces/${basename(workspaceFolder)}`;
+
   // Write merged config to a temp directory
   const tempConfigDir = join(tmpdir(), `pidc-${Date.now()}`);
   mkdirSync(tempConfigDir, { recursive: true });
@@ -180,7 +188,9 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     console.log("  ✓ Launching pi via holdpty...");
     try {
       devcontainerExec(workspaceFolder, [
-        "holdpty", "launch", "--bg", "--name", "pi", "--", "pi",
+        "bash",
+        "-lc",
+        `cd ${shQuote(remoteWorkspaceFolder)} && holdpty launch --bg --name pi -- pi`,
       ]);
       console.log("  ✓ Pi session started (holdpty)");
       console.log(
@@ -191,7 +201,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
         `  ⚠ Failed to launch pi via holdpty: ${err instanceof Error ? err.message : err}`
       );
       console.log(
-        `  You can manually exec into the container:\n    npx @devcontainers/cli exec --workspace-folder "${opts.workspaceFolder}" -- pi`
+        `  You can manually exec into the container:\n    npx @devcontainers/cli exec --id-label "devcontainer.local_folder=${workspaceFolder}" -- pi`
       );
     }
   }
