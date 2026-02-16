@@ -15,7 +15,7 @@ import {
   writeFileSync,
   mkdirSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { dockerMountPath } from "./paths.js";
 
@@ -95,12 +95,15 @@ export function resolveSettingsForContainer(
     }
   }
 
-  // Merge all paths (dedupe by resolved path)
+  // Merge all paths (dedupe by resolved path).
+  // Skip paths under ~/.pi/ — they're already accessible via the RO bind mount.
+  const piDir = resolve(join(homedir(), ".pi"));
   const allPaths = new Map<string, PiSettingsMount>();
   const addPath = (p: string) => {
     const resolved = resolve(p);
     if (!existsSync(resolved)) return;
     if (allPaths.has(resolved)) return;
+    if (resolved.startsWith(piDir + sep) || resolved.startsWith(piDir + "/")) return;
     allPaths.set(resolved, {
       hostPath: resolved,
       containerPath: toContainerPath(resolved),
@@ -124,17 +127,29 @@ export function resolveSettingsForContainer(
     const patched = { ...settings };
 
     if (extensions.length > 0) {
-      patched.extensions = extensions.map((p) => {
-        const resolved = resolve(p);
-        return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
-      });
+      patched.extensions = extensions
+        .filter((p) => {
+          const resolved = resolve(p);
+          return !(resolved.startsWith(piDir + sep) || resolved.startsWith(piDir + "/"));
+        })
+        .map((p) => {
+          const resolved = resolve(p);
+          return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
+        });
     }
 
     if (skills.length > 0) {
-      patched.skills = skills.map((p) => {
-        const resolved = resolve(p);
-        return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
-      });
+      // Filter out paths under ~/.pi (already in the RO bind mount)
+      // and convert the rest to container POSIX paths
+      patched.skills = skills
+        .filter((p) => {
+          const resolved = resolve(p);
+          return !(resolved.startsWith(piDir + sep) || resolved.startsWith(piDir + "/"));
+        })
+        .map((p) => {
+          const resolved = resolve(p);
+          return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
+        });
     }
 
     // Windows shell won't exist in Linux container
