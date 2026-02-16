@@ -1,6 +1,6 @@
 {
   "name": "@marcfargas/pi-devcontainers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Launch dev containers with pi pre-installed and configured",
   "type": "module",
   "bin": {
@@ -24,6 +24,11 @@
   ],
   "author": "Marc Fargas <marcfargas@users.noreply.github.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcfargas/pi-devcontainers.git",
+    "directory": "packages/cli"
+  },
   "engines": {
     "node": ">=20"
   }
