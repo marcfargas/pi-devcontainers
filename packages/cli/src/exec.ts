@@ -142,13 +142,16 @@ export function isContainerRunning(containerId: string): boolean {
   }
 }
 
+/** Default container user — devcontainer base images use 'vscode'. */
+const CONTAINER_USER = "vscode";
+
 /**
  * Execute a command inside a running container (non-interactive, captured output).
  */
 export function dockerExec(containerId: string, command: string[]): string {
   const escaped = command.map(c => `"${c.replace(/"/g, '\\"')}"`).join(" ");
   return execSync(
-    `docker exec "${containerId}" ${escaped}`,
+    `docker exec -u ${CONTAINER_USER} "${containerId}" ${escaped}`,
     {
       encoding: "utf-8",
       timeout: 60000,
@@ -168,7 +171,7 @@ export function dockerExecInteractive(
   return new Promise((resolve, reject) => {
     const child = spawn(
       "docker",
-      ["exec", "-it", containerId, ...command],
+      ["exec", "-it", "-u", CONTAINER_USER, containerId, ...command],
       { stdio: "inherit" }
     );
 
