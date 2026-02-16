@@ -1,6 +1,6 @@
 {
   "name": "pi-devcontainers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Launch dev containers with pi pre-installed. Wrapper for @marcfargas/pi-devcontainers.",
   "bin": {
     "pi-devcontainers": "./bin/pi-devcontainers.js",
@@ -10,7 +10,7 @@
     "bin"
   ],
   "dependencies": {
-    "@marcfargas/pi-devcontainers": "0.2.0"
+    "@marcfargas/pi-devcontainers": "0.3.0"
   },
   "keywords": [
     "pi",

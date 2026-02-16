@@ -1,6 +1,6 @@
 {
   "name": "@marcfargas/pi-devcontainers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Launch dev containers with pi pre-installed and configured",
   "type": "module",
   "bin": {
