@@ -13,6 +13,7 @@
 import { commandUp } from "./commands/up.js";
 import { commandAttach } from "./commands/attach.js";
 import { commandDown } from "./commands/down.js";
+import { commandRun } from "./commands/run.js";
 import { commandStatus } from "./commands/status.js";
 
 interface ParsedArgs {
@@ -95,6 +96,7 @@ function printHelp(): void {
 pi-devcontainers — Launch dev containers with pi pre-installed.
 
 Commands:
+  run      Up + attach + down (like docker run)
   up       Create and start a devcontainer with pi
   attach   Attach to a running pi session
   down     Stop and remove the devcontainer
@@ -128,6 +130,18 @@ async function main(): Promise<void> {
         env: parsed.env,
         rebuild: parsed.rebuild,
         noExtensions: parsed.noExtensions,
+      });
+      break;
+
+    case "run":
+      await commandRun({
+        workspaceFolder: parsed.workspaceFolder,
+        mode: parsed.mode,
+        writable: parsed.writable,
+        env: parsed.env,
+        rebuild: parsed.rebuild,
+        noExtensions: parsed.noExtensions,
+        sessionName: parsed.sessionName,
       });
       break;
 
