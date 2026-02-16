@@ -168,9 +168,19 @@ packages/
 ├── feature/    # Dev Container Feature (install.sh, setup.sh)
 └── wrapper/    # npm name squatting (pi-devcontainers → @marcfargas/pi-devcontainers)
 test/
-├── unit/       # 57 unit tests (paths, config, merge, extensions)
+├── unit/       # 63 unit tests (paths, config, merge, extensions, state)
 └── integration/
 ```
+
+### Lifecycle & State
+
+The devcontainers CLI provides `up` but no `down`/`stop`. pidc fills that gap:
+
+- **State file** (`~/.pi/devcontainers-state.json`): persists container IDs, workspace mappings, and temp dir paths after each `pidc up`
+- **`pidc down`**: uses `docker stop`/`rm` with the saved container ID, cleans up temp dirs
+- **`pidc attach`**: uses `docker exec -it` directly (bypasses devcontainer exec which requires a config file in the workspace)
+- **`pidc status`**: reads state file, cross-references with Docker for live status
+- **Fallback**: if the state file is missing/stale, containers are found by Docker label (`devcontainer.local_folder`)
 
 ## License
 
