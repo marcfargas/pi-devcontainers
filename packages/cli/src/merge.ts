@@ -138,6 +138,8 @@ export function mergeDevcontainerJson(
     settingsMounts?: PiSettingsMount[];
     /** Path to patched settings.json (single-file bind mount over original) */
     patchedSettingsPath?: string;
+    /** Workspace folder name (basename) — used to set explicit remoteWorkspaceFolder */
+    workspaceFolderBasename?: string;
   }
 ): DevcontainerJson {
   const merged: DevcontainerJson = { ...project };
@@ -146,6 +148,14 @@ export function mergeDevcontainerJson(
   // If no image or build, add default image
   if (!merged.image && !merged.build) {
     merged.image = config.defaultImage;
+  }
+
+  // Ensure workspaceFolder is always explicit in the merged config.
+  // When using --config from a temp directory, the devcontainer CLI may not
+  // correctly infer the remote workspace path, causing postCreateCommand
+  // and other lifecycle hooks to run with the wrong CWD.
+  if (!merged.workspaceFolder && options?.workspaceFolderBasename) {
+    merged.workspaceFolder = `/workspaces/${options.workspaceFolderBasename}`;
   }
 
   // Add pi feature

@@ -224,6 +224,24 @@ describe("mergeDevcontainerJson", () => {
     expect(merged.remoteEnv!.MY_VAR).toBe("project-value");
   });
 
+  it("sets explicit workspaceFolder when not defined in project", () => {
+    const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {}, {
+      workspaceFolderBasename: "my-project",
+    });
+    expect(merged.workspaceFolder).toBe("/workspaces/my-project");
+  });
+
+  it("preserves project workspaceFolder when already set", () => {
+    const project: DevcontainerJson = {
+      image: "node:20",
+      workspaceFolder: "/workspace",
+    };
+    const merged = mergeDevcontainerJson(project, DEFAULT_CONFIG, {}, {
+      workspaceFolderBasename: "my-project",
+    });
+    expect(merged.workspaceFolder).toBe("/workspace");
+  });
+
   it("preserves postCreateCommand untouched", () => {
     const project: DevcontainerJson = {
       image: "node:20",

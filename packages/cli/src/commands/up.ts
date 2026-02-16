@@ -14,7 +14,7 @@ import {
   writeFileSync,
   mkdirSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { type CliOverrides, resolveConfig, resolveEnvVars } from "../config.js";
 import { mergeDevcontainerJson, type DevcontainerJson } from "../merge.js";
@@ -123,6 +123,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
       containerHome,
       settingsMounts: settingsResolution.mounts,
       patchedSettingsPath: settingsResolution.patchedSettingsPath ?? undefined,
+      workspaceFolderBasename: basename(workspaceFolder),
     }
   );
 
