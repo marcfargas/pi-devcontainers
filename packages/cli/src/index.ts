@@ -23,6 +23,7 @@ interface ParsedArgs {
   writable: string[];
   env: Record<string, string | null>;
   rebuild: boolean;
+  verbose: boolean;
   noExtensions: boolean;
   sessionName?: string;
 }
@@ -35,6 +36,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     writable: [],
     env: {},
     rebuild: false,
+    verbose: false,
     noExtensions: false,
   };
 
@@ -69,6 +71,10 @@ function parseArgs(argv: string[]): ParsedArgs {
       }
       case "--rebuild":
         result.rebuild = true;
+        break;
+      case "--verbose":
+      case "-v":
+        result.verbose = true;
         break;
       case "--no-extensions":
         result.noExtensions = true;
@@ -108,6 +114,7 @@ Options:
   --writable <path>              Additional writable path (repeatable)
   -e, --env <KEY=VALUE|KEY>      Env var (KEY=VALUE: set, KEY: copy from host)
   --rebuild                      Force rebuild of container
+  -v, --verbose                  Show full devcontainer build output
   --no-extensions                Skip extension packing
 
 Examples:
@@ -129,6 +136,7 @@ async function main(): Promise<void> {
         writable: parsed.writable,
         env: parsed.env,
         rebuild: parsed.rebuild,
+        verbose: parsed.verbose,
         noExtensions: parsed.noExtensions,
       });
       break;
@@ -140,6 +148,7 @@ async function main(): Promise<void> {
         writable: parsed.writable,
         env: parsed.env,
         rebuild: parsed.rebuild,
+        verbose: parsed.verbose,
         noExtensions: parsed.noExtensions,
         sessionName: parsed.sessionName,
       });

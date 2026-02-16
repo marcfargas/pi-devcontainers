@@ -33,6 +33,7 @@ const FEATURE_REF = "ghcr.io/marcfargas/devcontainer-features/pi:0";
 export interface UpOptions extends CliOverrides {
   workspaceFolder: string;
   rebuild?: boolean;
+  verbose?: boolean;
 }
 
 /**
@@ -132,6 +133,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     workspaceFolder,
     configPath: tempConfigPath,
     rebuild: opts.rebuild,
+    verbose: opts.verbose,
   });
   const shortId = containerId.substring(0, 12);
   console.log(`  ✓ Container started: ${shortId}`);

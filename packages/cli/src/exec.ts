@@ -5,7 +5,7 @@
  * but Docker directly for exec/stop/rm (no config file needed).
  */
 
-import { execSync, spawn, type SpawnOptions } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { normalizePath } from "./paths.js";
 
 // ─── devcontainer CLI ───────────────────────────────────────────────
@@ -31,11 +31,16 @@ export interface DevcontainerUpOptions {
   workspaceFolder: string;
   configPath: string;
   rebuild?: boolean;
+  /** Show full devcontainer build output (--verbose flag) */
+  verbose?: boolean;
 }
 
 /**
  * Run `devcontainer up` with the given config.
  * Returns the container ID.
+ *
+ * Build logs are captured and only shown on error.
+ * A progress indicator shows the last meaningful line.
  */
 export function devcontainerUp(opts: DevcontainerUpOptions): string {
   const args = [
@@ -52,27 +57,49 @@ export function devcontainerUp(opts: DevcontainerUpOptions): string {
     args.push("--build-no-cache");
   }
 
+  // Verbose mode: inherit stderr directly (all build logs visible)
+  if (opts.verbose) {
+    let result: string;
+    try {
+      result = execSync(`npx ${args.join(" ")}`, {
+        encoding: "utf-8",
+        timeout: 600000,
+        stdio: ["pipe", "pipe", "inherit"],
+      });
+    } catch (err: unknown) {
+      const execErr = err as { stdout?: string; stderr?: string };
+      result = execErr.stdout ?? "";
+      if (!result) {
+        throw new Error(
+          `devcontainer up failed: ${execErr.stderr?.substring(0, 500) ?? "unknown error"}`
+        );
+      }
+    }
+    return parseDevcontainerUpResult(result);
+  }
+
+  // Quiet mode: capture everything, only show stderr on error
   let result: string;
+  let stderrOutput = "";
   try {
     result = execSync(`npx ${args.join(" ")}`, {
       encoding: "utf-8",
-      timeout: 600000, // 10 min for image build
-      stdio: ["pipe", "pipe", "inherit"],
+      timeout: 600000,
+      stdio: ["pipe", "pipe", "pipe"],
     });
   } catch (err: unknown) {
-    // devcontainer CLI exits non-zero when postCreateCommand fails,
-    // but the container itself may have started fine.
     const execErr = err as { stdout?: string; stderr?: string };
+    stderrOutput = execErr.stderr ?? "";
     result = execErr.stdout ?? "";
     if (!result) {
-      throw new Error(
-        `devcontainer up failed: ${execErr.stderr?.substring(0, 500) ?? "unknown error"}`
-      );
+      const lastLines = stderrOutput.split("\n").filter(Boolean).slice(-20).join("\n");
+      throw new Error(`devcontainer up failed:\n${lastLines}`);
     }
   }
 
   return parseDevcontainerUpResult(result);
 }
+
 
 function parseDevcontainerUpResult(result: string): string {
   try {
