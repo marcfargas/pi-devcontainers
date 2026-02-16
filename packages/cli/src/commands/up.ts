@@ -1,27 +1,23 @@
 /**
  * `pi-devcontainers up` — Launch a devcontainer with pi.
  *
- * 1. Read configs (user + project)
- * 2. Pack linked extensions (if configured)
- * 3. Merge devcontainer.json
- * 4. Write temp config
- * 5. devcontainer up --config <temp>
- * 6. Launch pi via holdpty
+ * 1. Read configs (user + project devcontainer.json)
+ * 2. Resolve extensions/skills from pi settings
+ * 3. Merge into a temp devcontainer.json (project config never modified)
+ * 4. devcontainer up --workspace-folder <project> --config <temp>
+ * 5. Launch pi via holdpty
  */
 
 import {
   readFileSync,
   writeFileSync,
   mkdirSync,
-  existsSync,
-  cpSync,
 } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { type CliOverrides, resolveConfig, resolveEnvVars } from "../config.js";
 import { mergeDevcontainerJson, type DevcontainerJson } from "../merge.js";
-import { normalizePath, pathExists, dockerMountPath } from "../paths.js";
+import { normalizePath, pathExists } from "../paths.js";
 import { resolveSettingsForContainer } from "../extensions.js";
 import {
   ensureDevcontainersCli,
@@ -29,32 +25,7 @@ import {
   devcontainerExec,
 } from "../exec.js";
 
-/**
- * Resolve where the feature source is.
- * In development (running from source), use local feature directory.
- * In production (installed via npm), use GHCR reference.
- */
-function resolveFeatureRef(): {
-  type: "local" | "ghcr";
-  ref: string;
-  path?: string;
-} {
-  // Check if packages/feature exists relative to this file (monorepo dev)
-  // In dev: src/commands/up.ts → ../../.. → packages/cli → ../feature
-  // In dist: dist/commands/up.js → ../../.. → packages/cli → ../feature
-  const thisDir = dirname(fileURLToPath(import.meta.url));
-  const cliPkgRoot = join(thisDir, "..", "..");
-  const localFeature = join(cliPkgRoot, "..", "feature");
-  if (existsSync(join(localFeature, "devcontainer-feature.json"))) {
-    return { type: "local", ref: "./pi-feature", path: localFeature };
-  }
-
-  // Production: use GHCR
-  return {
-    type: "ghcr",
-    ref: "ghcr.io/marcfargas/devcontainer-features/pi:latest",
-  };
-}
+const FEATURE_REF = "ghcr.io/marcfargas/devcontainer-features/pi:latest";
 
 export interface UpOptions extends CliOverrides {
   workspaceFolder: string;
@@ -132,62 +103,30 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     );
   }
 
-  // 5. Resolve feature source — local (dev) or GHCR (published)
-  const featureRef = resolveFeatureRef();
-  console.log(`  ✓ Feature: ${featureRef.type === "local" ? "local" : featureRef.ref}`);
-
-  // 6. Merge configs
+  // 5. Merge configs
   console.log("  ✓ Merging configuration...");
-
-  // Build temp workspace with .devcontainer/ for the merged config.
-  // The devcontainer CLI requires local features to be children of .devcontainer/,
-  // so when using local features we must use the temp dir as --workspace-folder
-  // and mount the real project via workspaceMount.
-  const tempDir = join(tmpdir(), `pi-devcontainer-${Date.now()}`);
-  const tempDevcontainerDir = join(tempDir, ".devcontainer");
-  mkdirSync(tempDevcontainerDir, { recursive: true });
-
-  let mergeFeatureRef = featureRef.ref;
-  let useLocalFeatureWorkaround = false;
-
-  if (featureRef.type === "local") {
-    // Copy feature into temp .devcontainer/ so the CLI can resolve it
-    const destFeatureDir = join(tempDevcontainerDir, "pi-feature");
-    cpSync(featureRef.path!, destFeatureDir, { recursive: true });
-    mergeFeatureRef = "./pi-feature";
-    useLocalFeatureWorkaround = true;
-  }
 
   const merged = mergeDevcontainerJson(
     projectConfig ?? {},
     config,
     resolvedEnv,
     {
-      featureRef: mergeFeatureRef,
+      featureRef: FEATURE_REF,
       settingsMounts: settingsResolution.mounts,
       patchedSettingsPath: settingsResolution.patchedSettingsPath ?? undefined,
     }
   );
 
-  // When using local feature, override workspaceFolder + workspaceMount
-  // so the CLI resolves ./pi-feature from the temp .devcontainer/
-  const containerWorkspace = `/workspaces/${basename(workspaceFolder)}`;
-  if (useLocalFeatureWorkaround) {
-    merged.workspaceFolder = containerWorkspace;
-    merged.workspaceMount = `source=${dockerMountPath(workspaceFolder)},target=${containerWorkspace},type=bind,consistency=cached`;
-  }
-
-  const tempConfigPath = join(tempDevcontainerDir, "devcontainer.json");
+  // Write merged config to a temp directory.
+  // devcontainer CLI requires --config to point to a file named devcontainer.json
+  const tempConfigDir = join(tmpdir(), `pidc-${Date.now()}`);
+  mkdirSync(tempConfigDir, { recursive: true });
+  const tempConfigPath = join(tempConfigDir, "devcontainer.json");
   writeFileSync(tempConfigPath, JSON.stringify(merged, null, 2));
   console.log(`  ✓ Wrote merged config: ${tempConfigPath}`);
-
-  // 7. Run devcontainer up
-  // When using local feature workaround, --workspace-folder must be the temp dir
-  // (so the CLI finds .devcontainer/pi-feature). The real project is mounted via workspaceMount.
-  const cliWorkspaceFolder = useLocalFeatureWorkaround ? tempDir : workspaceFolder;
   console.log("  ✓ Starting devcontainer...");
   const containerId = devcontainerUp({
-    workspaceFolder: cliWorkspaceFolder,
+    workspaceFolder: workspaceFolder,
     configPath: tempConfigPath,
     rebuild: opts.rebuild,
   });
@@ -198,7 +137,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     console.log("  ✓ Launching pi via holdpty...");
     try {
       devcontainerExec({
-        workspaceFolder: cliWorkspaceFolder,
+        workspaceFolder: workspaceFolder,
         command: [
           "holdpty",
           "launch",
@@ -218,7 +157,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
         `  ⚠ Failed to launch pi via holdpty: ${err instanceof Error ? err.message : err}`
       );
       console.log(
-        `  You can manually exec into the container:\n  devcontainer exec --workspace-folder "${cliWorkspaceFolder}" pi`
+        `  You can manually exec into the container:\n  devcontainer exec --workspace-folder "${workspaceFolder}" pi`
       );
     }
   }
