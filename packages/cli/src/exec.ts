@@ -57,6 +57,10 @@ function devcontainerInvocation(args: string[]): { bin: string; args: string[] }
   return { bin: "npx", args: ["@devcontainers/cli", ...args] };
 }
 
+function workspaceIdLabel(workspaceFolder: string): string {
+  return `devcontainer.local_folder=${normalizePath(workspaceFolder)}`;
+}
+
 /** Check that devcontainers CLI is available. */
 export function ensureDevcontainersCli(): void {
   detectDevcontainersRunner();
@@ -76,6 +80,8 @@ export function devcontainerUp(opts: DevcontainerUpOptions): void {
     "up",
     "--workspace-folder",
     opts.workspaceFolder,
+    "--id-label",
+    workspaceIdLabel(opts.workspaceFolder),
     "--config",
     opts.configPath,
   ];
@@ -133,8 +139,8 @@ export function devcontainerExec(
 ): string {
   const invocation = devcontainerInvocation([
     "exec",
-    "--workspace-folder",
-    workspaceFolder,
+    "--id-label",
+    workspaceIdLabel(workspaceFolder),
     "--",
     ...command,
   ]);
@@ -155,8 +161,8 @@ export function devcontainerExecInteractive(
   return new Promise((resolve, reject) => {
     const invocation = devcontainerInvocation([
       "exec",
-      "--workspace-folder",
-      workspaceFolder,
+      "--id-label",
+      workspaceIdLabel(workspaceFolder),
       "--",
       ...command,
     ]);
