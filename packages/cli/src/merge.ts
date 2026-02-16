@@ -158,11 +158,12 @@ export function mergeDevcontainerJson(
     merged.workspaceFolder = `/workspaces/${options.workspaceFolderBasename}`;
   }
 
-  // Add pi feature
+  // Add pi feature + any additional features from config
   const featureKey =
     options?.featureRef ?? "ghcr.io/marcfargas/pi-devcontainer-feature:latest";
   merged.features = {
     ...(merged.features ?? {}),
+    ...(config.features ?? {}),
     [featureKey]: piFeatureEntry(config),
   };
 

@@ -25,6 +25,8 @@ export interface PiDevcontainerConfig {
   extensions: "pack" | "registry" | "skip";
   /** Environment variables: value = set explicitly, null = copy from host */
   env: Record<string, string | null>;
+  /** Additional devcontainer features to inject (merged with pi feature) */
+  features: Record<string, Record<string, unknown>>;
   /** Default base image for projects without devcontainer.json */
   defaultImage: string;
 }
@@ -36,6 +38,7 @@ const DEFAULTS: PiDevcontainerConfig = {
   writable: ["todos", "memoria"],
   extensions: "pack",
   env: {},
+  features: {},
   defaultImage: "mcr.microsoft.com/devcontainers/base:ubuntu",
 };
 
@@ -111,6 +114,7 @@ export function resolveConfig(overrides: CliOverrides = {}): PiDevcontainerConfi
       ? "skip"
       : (project.extensions ?? user.extensions ?? DEFAULTS.extensions),
     env: { ...(user.env ?? {}), ...(project.env ?? {}), ...(overrides.env ?? {}) },
+    features: { ...(user.features ?? {}), ...(project.features ?? {}) },
     defaultImage: project.defaultImage ?? user.defaultImage ?? DEFAULTS.defaultImage,
   };
 

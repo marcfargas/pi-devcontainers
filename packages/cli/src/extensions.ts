@@ -107,12 +107,9 @@ export function resolveSettingsForContainer(
   const userSettingsPath = join(homedir(), ".pi", "agent", "settings.json");
   const settings = readSettings(userSettingsPath);
 
-  if (!settings) {
-    return { mounts: [], patchedSettingsPath: null };
-  }
-
-  const extensions: string[] = (settings.extensions as string[]) ?? [];
-  const skills: string[] = (settings.skills as string[]) ?? [];
+  const extensions: string[] = (settings?.extensions as string[]) ?? [];
+  const skills: string[] = (settings?.skills as string[]) ?? [];
+  const packages: string[] = (settings?.packages as string[]) ?? [];
 
   // Also check project-level settings
   let projectExtensions: string[] = [];
@@ -127,7 +124,9 @@ export function resolveSettingsForContainer(
     }
   }
 
-  const packages: string[] = (settings.packages as string[]) ?? [];
+  if (!settings && projectExtensions.length === 0 && projectSkills.length === 0) {
+    return { mounts: [], patchedSettingsPath: null };
+  }
 
   // Merge all paths (dedupe by resolved path).
   // Skip paths under ~/.pi/ — they're already accessible via the RO bind mount.
@@ -167,7 +166,7 @@ export function resolveSettingsForContainer(
 
   let patchedPath: string | null = null;
   if (needsPatching) {
-    const patched = { ...settings };
+    const patched = { ...(settings ?? {}) };
 
     if (extensions.length > 0) {
       // Keep original extension paths in settings (pi needs the package dir,
