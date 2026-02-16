@@ -127,6 +127,8 @@ export function resolveSettingsForContainer(
     }
   }
 
+  const packages: string[] = (settings.packages as string[]) ?? [];
+
   // Merge all paths (dedupe by resolved path).
   // Skip paths under ~/.pi/ — they're already accessible via the RO bind mount.
   const piDir = resolve(join(homedir(), ".pi"));
@@ -151,6 +153,8 @@ export function resolveSettingsForContainer(
   }
   // Skills: mount as-is (no node_modules deps)
   for (const p of [...skills, ...projectSkills]) addPath(p);
+  // Packages: mount as-is
+  for (const p of packages) addPath(p);
 
   if (allPaths.size === 0) {
     return { mounts: [], patchedSettingsPath: null };
@@ -188,6 +192,15 @@ export function resolveSettingsForContainer(
           const resolved = resolve(p);
           return allPaths.get(resolved)?.containerPath ?? toContainerPath(p);
         });
+    }
+
+    if (packages.length > 0) {
+      patched.packages = packages
+        .filter((p) => {
+          const resolved = resolve(p);
+          return !(resolved.startsWith(piDir + sep) || resolved.startsWith(piDir + "/"));
+        })
+        .map((p) => toContainerPath(resolve(p)));
     }
 
     // Windows shell won't exist in Linux container
