@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { resolveConfig, resolveEnvVars, type CliOverrides } from "../../packages/cli/src/config.js";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("resolveConfig", () => {
   it("returns defaults when no user config or overrides", () => {
@@ -44,6 +47,72 @@ describe("resolveConfig", () => {
     });
     expect(config.env.CUSTOM_VAR).toBe("value");
     expect(config.env.COPY_VAR).toBeNull();
+  });
+});
+
+describe("project-level config", () => {
+  let projectDir: string;
+
+  beforeEach(() => {
+    projectDir = join(tmpdir(), `pidc-config-test-${Date.now()}`);
+    mkdirSync(join(projectDir, ".pi"), { recursive: true });
+  });
+
+  afterEach(() => {
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it("reads project .pi/devcontainers.json", () => {
+    writeFileSync(
+      join(projectDir, ".pi", "devcontainers.json"),
+      JSON.stringify({ defaultImage: "node:22" })
+    );
+    const config = resolveConfig({ workspaceFolder: projectDir });
+    expect(config.defaultImage).toBe("node:22");
+  });
+
+  it("project config overrides user defaults", () => {
+    writeFileSync(
+      join(projectDir, ".pi", "devcontainers.json"),
+      JSON.stringify({ mode: "pi-server" })
+    );
+    const config = resolveConfig({ workspaceFolder: projectDir });
+    expect(config.mode).toBe("pi-server");
+  });
+
+  it("CLI flags override project config", () => {
+    writeFileSync(
+      join(projectDir, ".pi", "devcontainers.json"),
+      JSON.stringify({ mode: "pi-server" })
+    );
+    const config = resolveConfig({ workspaceFolder: projectDir, mode: "holdpty" });
+    expect(config.mode).toBe("holdpty");
+  });
+
+  it("project writable paths are merged with user defaults", () => {
+    writeFileSync(
+      join(projectDir, ".pi", "devcontainers.json"),
+      JSON.stringify({ writable: ["custom-data"] })
+    );
+    const config = resolveConfig({ workspaceFolder: projectDir });
+    expect(config.writable).toContain("todos");
+    expect(config.writable).toContain("memoria");
+    expect(config.writable).toContain("custom-data");
+  });
+
+  it("project env is merged over user env", () => {
+    writeFileSync(
+      join(projectDir, ".pi", "devcontainers.json"),
+      JSON.stringify({ env: { PROJECT_VAR: "pval" } })
+    );
+    const config = resolveConfig({ workspaceFolder: projectDir });
+    expect(config.env.PROJECT_VAR).toBe("pval");
+  });
+
+  it("returns defaults when project has no .pi/devcontainers.json", () => {
+    const config = resolveConfig({ workspaceFolder: projectDir });
+    expect(config.nodeVersion).toBe("22.14.0");
+    expect(config.defaultImage).toBe("mcr.microsoft.com/devcontainers/base:ubuntu");
   });
 });
 

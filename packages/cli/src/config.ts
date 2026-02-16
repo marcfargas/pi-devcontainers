@@ -1,10 +1,11 @@
 /**
  * Read and merge pi-devcontainers configuration.
  *
- * Config sources (precedence: CLI flags > user config > defaults):
+ * Config sources (precedence: CLI flags > project > user > defaults):
  * 1. CLI flags (--mode, --writable, --env, etc.)
- * 2. ~/.pi/devcontainers.json (user preferences)
- * 3. Built-in defaults
+ * 2. <project>/.pi/devcontainers.json (project overrides)
+ * 3. ~/.pi/devcontainers.json (user preferences)
+ * 4. Built-in defaults
  */
 
 import { readFileSync } from "node:fs";
@@ -39,10 +40,9 @@ const DEFAULTS: PiDevcontainerConfig = {
 };
 
 /**
- * Read ~/.pi/devcontainers.json if it exists.
+ * Read and parse a JSONC config file, returning partial config or empty object.
  */
-function readUserConfig(): Partial<PiDevcontainerConfig> {
-  const configPath = join(piConfigDir(), "devcontainers.json");
+function readConfigFile(configPath: string, label: string): Partial<PiDevcontainerConfig> {
   if (!pathExists(configPath)) {
     return {};
   }
@@ -56,10 +56,24 @@ function readUserConfig(): Partial<PiDevcontainerConfig> {
     return JSON.parse(stripped) as Partial<PiDevcontainerConfig>;
   } catch (err) {
     console.error(
-      `Warning: Failed to parse ~/.pi/devcontainers.json: ${err instanceof Error ? err.message : err}`
+      `Warning: Failed to parse ${label}: ${err instanceof Error ? err.message : err}`
     );
     return {};
   }
+}
+
+/**
+ * Read ~/.pi/devcontainers.json if it exists.
+ */
+function readUserConfig(): Partial<PiDevcontainerConfig> {
+  return readConfigFile(join(piConfigDir(), "devcontainers.json"), "~/.pi/devcontainers.json");
+}
+
+/**
+ * Read <project>/.pi/devcontainers.json if it exists.
+ */
+function readProjectConfig(workspaceFolder: string): Partial<PiDevcontainerConfig> {
+  return readConfigFile(join(workspaceFolder, ".pi", "devcontainers.json"), ".pi/devcontainers.json");
 }
 
 export interface CliOverrides {
@@ -68,29 +82,35 @@ export interface CliOverrides {
   env?: Record<string, string | null>;
   rebuild?: boolean;
   noExtensions?: boolean;
+  /** Workspace folder — used to find project-level .pi/devcontainers.json */
+  workspaceFolder?: string;
 }
 
 /**
- * Build final config: defaults ← user config ← CLI overrides.
+ * Build final config: defaults ← user config ← project config ← CLI overrides.
  */
 export function resolveConfig(overrides: CliOverrides = {}): PiDevcontainerConfig {
   const user = readUserConfig();
+  const project = overrides.workspaceFolder
+    ? readProjectConfig(overrides.workspaceFolder)
+    : {};
 
   const config: PiDevcontainerConfig = {
-    nodeVersion: user.nodeVersion ?? DEFAULTS.nodeVersion,
-    piVersion: user.piVersion ?? DEFAULTS.piVersion,
-    mode: overrides.mode ?? user.mode ?? DEFAULTS.mode,
+    nodeVersion: project.nodeVersion ?? user.nodeVersion ?? DEFAULTS.nodeVersion,
+    piVersion: project.piVersion ?? user.piVersion ?? DEFAULTS.piVersion,
+    mode: overrides.mode ?? project.mode ?? user.mode ?? DEFAULTS.mode,
     writable: [
       ...new Set([
         ...(user.writable ?? DEFAULTS.writable),
+        ...(project.writable ?? []),
         ...(overrides.writable ?? []),
       ]),
     ],
     extensions: overrides.noExtensions
       ? "skip"
-      : (user.extensions ?? DEFAULTS.extensions),
-    env: { ...(user.env ?? {}), ...(overrides.env ?? {}) },
-    defaultImage: user.defaultImage ?? DEFAULTS.defaultImage,
+      : (project.extensions ?? user.extensions ?? DEFAULTS.extensions),
+    env: { ...(user.env ?? {}), ...(project.env ?? {}), ...(overrides.env ?? {}) },
+    defaultImage: project.defaultImage ?? user.defaultImage ?? DEFAULTS.defaultImage,
   };
 
   return config;

@@ -87,7 +87,11 @@ If your project has no `devcontainer.json`, a minimal one is generated with the 
 
 ## Configuration
 
-Create `~/.pi/devcontainers.json`:
+Configuration is layered: **CLI flags > project > user > defaults**.
+
+### User config: `~/.pi/devcontainers.json`
+
+Global preferences — applies to all projects:
 
 ```jsonc
 {
@@ -105,6 +109,22 @@ Create `~/.pi/devcontainers.json`:
 ```
 
 All fields optional — sensible defaults for anything omitted.
+
+### Project config: `<project>/.pi/devcontainers.json`
+
+Per-project overrides — same schema, takes precedence over user config:
+
+```jsonc
+{
+  "defaultImage": "node:22",              // project needs Node
+  "env": {
+    "DATABASE_URL": null                  // copy from host for this project
+  },
+  "writable": ["experiments"]             // extra writable dir (merged with user)
+}
+```
+
+Useful for pinning a base image, adding project-specific env vars, or extra writable mounts.
 
 ## CLI Reference
 
