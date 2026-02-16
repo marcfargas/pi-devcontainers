@@ -5,17 +5,18 @@
  * 2. Resolve extensions/skills from pi settings
  * 3. Merge into a temp devcontainer.json (project config never modified)
  * 4. devcontainer up --workspace-folder <project> --config <temp>
- * 5. Launch pi via holdpty (using docker exec directly)
- * 6. Save state for attach/down
+ * 5. Launch pi via holdpty (devcontainer exec)
  */
 
 import {
   readFileSync,
   writeFileSync,
   mkdirSync,
+  rmSync,
 } from "node:fs";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
+import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { type CliOverrides, resolveConfig, resolveEnvVars } from "../config.js";
 import { mergeDevcontainerJson, type DevcontainerJson } from "../merge.js";
 import { normalizePath, pathExists } from "../paths.js";
@@ -23,10 +24,8 @@ import { resolveSettingsForContainer } from "../extensions.js";
 import {
   ensureDevcontainersCli,
   devcontainerUp,
-  dockerExec,
-  isContainerRunning,
+  devcontainerExec,
 } from "../exec.js";
-import { saveContainer } from "../state.js";
 
 const FEATURE_REF = "ghcr.io/marcfargas/devcontainer-features/pi:0";
 
@@ -36,9 +35,24 @@ export interface UpOptions extends CliOverrides {
   verbose?: boolean;
 }
 
-/**
- * Find and read the project's devcontainer.json, if it exists.
- */
+function parseJsoncObject<T>(raw: string, label: string): T {
+  const errors: ParseError[] = [];
+  const parsed = parse(raw, errors, {
+    allowTrailingComma: true,
+    disallowComments: false,
+  }) as T;
+
+  if (errors.length > 0) {
+    const first = errors[0];
+    throw new Error(
+      `${label}: ${printParseErrorCode(first.error)} at offset ${first.offset}`
+    );
+  }
+
+  return parsed;
+}
+
+/** Find and read the project's devcontainer.json, if it exists. */
 function readProjectDevcontainerJson(
   workspaceFolder: string
 ): DevcontainerJson | null {
@@ -51,12 +65,7 @@ function readProjectDevcontainerJson(
     if (pathExists(candidate)) {
       try {
         const raw = readFileSync(candidate, "utf-8");
-        // Strip JSON comments (// and /* */) and trailing commas (JSONC → JSON)
-        const stripped = raw
-          .replace(/\/\/.*$/gm, "")
-          .replace(/\/\*[\s\S]*?\*\//g, "")
-          .replace(/,\s*([}\]])/g, "$1");
-        return JSON.parse(stripped) as DevcontainerJson;
+        return parseJsoncObject<DevcontainerJson>(raw, candidate);
       } catch (err) {
         console.error(
           `Warning: Failed to parse ${candidate}: ${err instanceof Error ? err.message : err}`
@@ -108,7 +117,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     );
   }
 
-  // 5. Determine container user and home directory
+  // 5. Determine container home directory from remoteUser
   const remoteUser = (projectConfig?.remoteUser as string | undefined) ?? undefined;
   const containerHome = remoteUser
     ? (remoteUser === "root" ? "/root" : `/home/${remoteUser}`)
@@ -136,47 +145,33 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   writeFileSync(tempConfigPath, JSON.stringify(merged, null, 2));
   console.log(`  ✓ Wrote merged config: ${tempConfigPath}`);
 
-  // 7. devcontainer up
+  // 7. devcontainer up (config is only needed for this call)
   console.log("  ✓ Starting devcontainer...");
-  const upResult = devcontainerUp({
-    workspaceFolder,
-    configPath: tempConfigPath,
-    rebuild: opts.rebuild,
-    verbose: opts.verbose,
-  });
-  const { containerId, remoteWorkspaceFolder } = upResult;
-  const shortId = containerId.substring(0, 12);
-  console.log(`  ✓ Container started: ${shortId}`);
+  try {
+    devcontainerUp({
+      workspaceFolder,
+      configPath: tempConfigPath,
+      rebuild: opts.rebuild,
+      verbose: opts.verbose,
+    });
+  } finally {
+    // Container is configured at creation time; remove temp config immediately.
+    try {
+      rmSync(tempConfigDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  }
 
-  // 8. Build the env that docker exec needs (PI_DEVCONTAINER + user/project env)
-  const execEnv: Record<string, string> = {
-    PI_DEVCONTAINER: "1",
-    ...resolvedEnv,
-  };
+  console.log("  ✓ Container started");
 
-  // 9. Save state for attach/down/status (no env — may contain secrets)
-  saveContainer({
-    containerId,
-    workspaceFolder,
-    remoteWorkspaceFolder,
-    configDir: tempConfigDir,
-    settingsDir: settingsResolution.patchedSettingsPath
-      ? join(settingsResolution.patchedSettingsPath, "..")
-      : undefined,
-    remoteUser,
-    startedAt: new Date().toISOString(),
-  });
-
-  // 10. Launch pi via holdpty
+  // 8. Launch pi via holdpty using devcontainer exec
   if (config.mode === "holdpty") {
     console.log("  ✓ Launching pi via holdpty...");
     try {
-      if (!isContainerRunning(containerId)) {
-        throw new Error("Container is not running");
-      }
-      dockerExec(containerId, [
+      devcontainerExec(workspaceFolder, [
         "holdpty", "launch", "--bg", "--name", "pi", "--", "pi",
-      ], { user: remoteUser, workdir: remoteWorkspaceFolder, env: execEnv });
+      ]);
       console.log("  ✓ Pi session started (holdpty)");
       console.log(
         `\n  Attach with: pidc attach -w "${opts.workspaceFolder}"`
@@ -186,7 +181,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
         `  ⚠ Failed to launch pi via holdpty: ${err instanceof Error ? err.message : err}`
       );
       console.log(
-        `  You can manually exec into the container:\n    docker exec -it ${shortId} pi`
+        `  You can manually exec into the container:\n    npx @devcontainers/cli exec --workspace-folder "${opts.workspaceFolder}" -- pi`
       );
     }
   }

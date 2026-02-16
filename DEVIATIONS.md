@@ -1,88 +1,77 @@
 # Deviations from Standard Dev Containers
 
-Every way `pidc` deviates from the standard `devcontainer` CLI behaviour. Start here when debugging something unexpected inside a pidc-managed container.
+Current `pidc` behavior that differs from using `@devcontainers/cli` directly.
 
-## 1. Docker exec instead of devcontainer exec
+> This file reflects the **current** simplified architecture.
+> Historical deviations removed in the refactor (docker-exec runtime, state file, manual env/user/cwd handling)
+> are listed at the end.
 
-**Standard**: `devcontainer exec --workspace-folder <path>` reads the project's `.devcontainer/devcontainer.json` and runs commands inside the container with proper env and user context.
-
-**pidc**: Uses `docker exec` directly with the saved container ID. The devcontainer CLI's `exec` requires a config file in the workspace — since we use a temporary merged config (not the project's), the CLI can't find it.
-
-**Impact**: Environment variables set via `remoteEnv` in devcontainer.json are NOT available through `docker exec`. pidc compensates by injecting `TERM`, `COLORTERM`, and `LANG` via `-e` flags on every `docker exec` call.
-
-## 2. Terminal environment injected explicitly
-
-**Standard**: `remoteEnv` values are set by the devcontainer runtime and available in all shells.
-
-**pidc**: Since we use `docker exec` (see above), `remoteEnv` is invisible. pidc injects these on every exec:
-- `TERM=xterm-256color` — enables color and cursor control
-- `COLORTERM=truecolor` — enables 24-bit RGB colours (required by pi's TUI)
-- `LANG=C.UTF-8` — enables Unicode box-drawing characters
-
-These are also set in `remoteEnv` of the merged config (for anything that does use the devcontainer exec path), but the `docker exec -e` flags are the actual mechanism.
-
-## 3. Temporary merged config
+## 1. Temporary merged config for `up`
 
 **Standard**: `devcontainer up` reads `.devcontainer/devcontainer.json` from the workspace.
 
-**pidc**: Generates a temporary `devcontainer.json` in `$TEMP/pidc-<timestamp>/` that merges the project's config with pi's requirements (feature, mounts, env). The project file is never modified. The temp config is referenced via `--config <path>`.
+**pidc**: Builds a temporary merged `devcontainer.json` (project config + pi additions), then runs:
 
-**Impact**: After `devcontainer up`, the devcontainer CLI's other commands (`exec`, `read-configuration`) won't find this config unless you pass `--config` explicitly. pidc doesn't use them — it goes through Docker directly.
+```bash
+devcontainer up --workspace-folder <project> --config <temp>
+```
 
-## 4. State file for lifecycle management
+The project file is never modified.
 
-**Standard**: The devcontainer CLI has no `down`, `stop`, or `status` commands. It finds containers by label (`devcontainer.local_folder`).
+After `up`, temp config is deleted immediately.
 
-**pidc**: Maintains `~/.pi/devcontainers-state.json` mapping workspace paths to container IDs, temp config dirs, the remote user, and timestamps. This enables:
-- `pidc down` — `docker stop` + `docker rm` + temp dir cleanup
-- `pidc attach` — `docker exec -it` with the right container
-- `pidc status` — cross-references state with live Docker status
-- Falls back to label-based discovery if the state file is stale
+## 2. Pi-specific feature + mounts are injected
 
-## 5. Symlink fixup on Windows (`/mnt/host/`)
+`pidc` appends pi requirements to the merged config:
+- pi feature (`ghcr.io/marcfargas/devcontainer-features/pi`)
+- `~/.pi` bind mount (RO)
+- writable overlays (`todos`, `memoria`, configurable)
+- extension/skill mounts
+- `remoteEnv` additions
 
-**Standard**: Bind mounts on Docker Desktop for Windows work transparently.
+Project settings still take precedence where intended (e.g. existing `remoteEnv` keys).
 
-**pidc**: Docker Desktop rewrites symlink targets inside bind mounts with a `/mnt/host/` prefix. For example, an npm workspace symlink `node_modules/@foo/bar → ../../packages/bar` resolves to `/mnt/host/c/dev/repo/packages/bar` instead of `/c/dev/repo/packages/bar`. This path doesn't exist in the container.
+## 3. Windows symlink fixup (`/mnt/host/*`)
 
-**Fix**: pidc adds a `postCreateCommand` that creates `/mnt/host/<drive>` → `/<drive>` symlinks (e.g., `/mnt/host/c` → `/c`) via `sudo`. Only on Windows.
+On Docker Desktop for Windows, bind-mount symlink targets can be rewritten with `/mnt/host/...` paths that
+are not resolvable in-container.
 
-## 6. Monorepo root mounts for extensions
+`pidc` chains a Windows-only `postCreateCommand` to create links like:
 
-**Standard**: You mount exactly what you specify.
+```bash
+/mnt/host/c -> /c
+```
 
-**pidc**: When an extension path (from pi's `settings.json`) is inside an npm workspace monorepo, pidc walks up the directory tree to find the monorepo root (a `package.json` with `workspaces`). It mounts the monorepo root instead of the individual package directory. This ensures hoisted `node_modules` are accessible for `require()` resolution.
+## 4. Monorepo root mounting for extensions
 
-The patched `settings.json` still references the specific package path — only the Docker mount is widened.
+If an extension path is inside an npm workspace monorepo, `pidc` mounts the monorepo root (RO) instead of only
+that package directory so hoisted `node_modules` resolve correctly.
 
-## 7. Paths under `~/.pi` are not mounted individually
+## 5. `~/.pi` subpaths are deduped from explicit mounts
 
-**Standard**: N/A (this is pidc-specific).
+Paths under `~/.pi` are not mounted individually because `~/.pi` is already mounted as a parent bind mount.
 
-**pidc**: The entire `~/.pi` directory is bind-mounted read-only into the container. Any extension or skill paths that live under `~/.pi/` are skipped from individual mounting — they're already accessible via the parent mount. This prevents duplicate skill/extension discovery (pi auto-scans `~/.pi/agent/skills/`).
+## 6. Windows `settings.json` path patching
 
-## 8. Settings.json path patching (Windows only)
+On Windows, pi settings can contain Windows paths (`C:/...`) that are invalid in Linux containers.
 
-**Standard**: N/A.
+`pidc` generates a patched `settings.json` with POSIX paths (`/c/...`) and bind-mounts that file in-container.
 
-**pidc**: On Windows, pi's `settings.json` contains Windows paths (`C:/dev/my-extension`). These don't exist inside the Linux container. pidc creates a patched copy in a temp directory that converts all extension/skill paths to their POSIX equivalents (`/c/dev/my-extension`) and mounts it over the original.
+## 7. Pi runtime isolation
 
-On Linux/macOS, the original `settings.json` is used as-is through the `~/.pi` mount — host paths are already valid POSIX paths.
+The feature installs isolated Node + pi + holdpty in `/opt/pi/`, avoiding conflicts with project Node/tooling.
 
-## 9. Container user resolution
+## 8. Writable overlays on a read-only `~/.pi`
 
-**Standard**: `devcontainer exec` respects `remoteUser` from the config automatically.
+`~/.pi` is mounted RO, but selected subdirectories (default: `todos`, `memoria`) are mounted RW on top.
 
-**pidc**: Since we use `docker exec`, we must handle `remoteUser` ourselves. pidc reads `remoteUser` from the project's devcontainer.json, derives the container home directory (`root` → `/root`, others → `/home/<user>`), passes `-u <user>` on docker exec calls, and persists the user in the state file. If no `remoteUser` is set, no `-u` flag is passed, deferring to the container's default (typically `root`).
+---
 
-## 10. Pi runtime isolation
+## Removed Historical Deviations (no longer true)
 
-**Standard**: Dev Container Features install into the container's filesystem alongside everything else.
+These were intentionally removed in the simplification refactor:
 
-**pidc**: The pi feature installs a completely isolated Node.js + pi + holdpty in `/opt/pi/`. It does not interfere with the project's Node.js version, global packages, or PATH ordering (beyond prepending `/opt/pi/bin`). This prevents pi's dependencies from conflicting with the project's.
-
-## 11. Writable volume overlays on read-only mounts
-
-**Standard**: Bind mounts are either RO or RW, no mixing.
-
-**pidc**: The `~/.pi` directory is mounted read-only (agent config shouldn't be mutated from inside the container). However, pi needs to write to specific subdirectories (`todos/`, `memoria/`). pidc creates named Docker volumes and mounts them on top of the RO bind at those paths, creating a writable overlay. The writable paths are configurable via `~/.pi/devcontainers.json`.
+- Using raw `docker exec` for runtime commands (now `devcontainer exec --workspace-folder`)
+- Manual injection of terminal env vars on every exec
+- Manual user/CWD resolution for attach/run
+- State file (`~/.pi/devcontainers-state.json`) for lifecycle mapping

@@ -31,5 +31,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
   }
 }

@@ -114,6 +114,33 @@ describe("project-level config", () => {
     expect(config.nodeVersion).toBe("22.14.0");
     expect(config.defaultImage).toBe("mcr.microsoft.com/devcontainers/base:ubuntu");
   });
+
+  it("parses JSONC comments and trailing commas", () => {
+    writeFileSync(
+      join(projectDir, ".pi", "devcontainers.json"),
+      `{
+        // comment
+        "defaultImage": "node:22",
+        "writable": ["cache",],
+      }`
+    );
+    const config = resolveConfig({ workspaceFolder: projectDir });
+    expect(config.defaultImage).toBe("node:22");
+    expect(config.writable).toContain("cache");
+  });
+
+  it("preserves // inside string values (e.g. URLs)", () => {
+    writeFileSync(
+      join(projectDir, ".pi", "devcontainers.json"),
+      `{
+        "env": {
+          "BROKER_URL": "https://broker.example.com"
+        }
+      }`
+    );
+    const config = resolveConfig({ workspaceFolder: projectDir });
+    expect(config.env.BROKER_URL).toBe("https://broker.example.com");
+  });
 });
 
 describe("resolveEnvVars", () => {

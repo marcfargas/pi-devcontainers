@@ -156,9 +156,9 @@ The feature is published at `ghcr.io/marcfargas/devcontainer-features/pi` and ad
 
 ## Non-Standard Behaviour
 
-pidc wraps the devcontainers CLI but deviates from standard behaviour in several ways (using `docker exec` instead of `devcontainer exec`, injecting terminal env vars, fixing Docker Desktop symlink paths, etc.).
+pidc wraps the devcontainers CLI but still adds some non-standard behavior (temporary merged config, pi-specific feature/mount injection, Windows symlink/path fixups, etc.).
 
-See [DEVIATIONS.md](./DEVIATIONS.md) for the complete list with explanations.
+See [DEVIATIONS.md](./DEVIATIONS.md) for the complete current list.
 
 ## Development
 
@@ -178,13 +178,18 @@ packages/
 ├── feature/    # Dev Container Feature (install.sh)
 └── wrapper/    # npm name squatting (pi-devcontainers → @marcfargas/pi-devcontainers)
 test/
-├── unit/       # Unit tests (paths, config, merge, extensions, state)
+├── unit/       # Unit tests (paths, config, merge, extensions)
 └── integration/
 ```
 
-### Lifecycle & State
+### Lifecycle
 
-The devcontainers CLI has no `down`/`stop`/`status`. pidc fills that gap with a state file (`~/.pi/devcontainers-state.json`) mapping workspaces to container IDs. Falls back to Docker label discovery if the state file is stale.
+`pidc` uses:
+- `devcontainer up` to create/start
+- `devcontainer exec --workspace-folder ...` to launch/attach pi
+- `docker stop`/`docker rm` with `devcontainer.local_folder` labels for teardown
+
+No persistent pidc state file is required.
 
 ## License
 

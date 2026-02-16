@@ -1,25 +1,21 @@
 /**
- * `pi-devcontainers status` — List running pi devcontainers.
- *
- * Shows containers from the state file, cross-referenced with Docker
- * to show actual running status.
+ * `pi-devcontainers status` — List devcontainers discovered by label.
  */
 
-import { listContainers, removeContainer } from "../state.js";
-import { isContainerRunning } from "../exec.js";
+import { listLabeledDevcontainers } from "../exec.js";
 
 export async function commandStatus(): Promise<void> {
   console.log("📋 Pi devcontainers:\n");
 
-  const containers = listContainers();
+  const containers = listLabeledDevcontainers();
 
   if (containers.length === 0) {
-    console.log("  (no tracked pi devcontainers)");
+    console.log("  (no devcontainers found)");
     return;
   }
 
   console.log(
-    "  ID            Status     Started              Workspace"
+    "  ID            Status                     Workspace"
   );
   console.log(
     "  ──────────────────────────────────────────────────────────────────────"
@@ -27,17 +23,8 @@ export async function commandStatus(): Promise<void> {
 
   for (const c of containers) {
     const shortId = c.containerId.substring(0, 12);
-    const running = isContainerRunning(c.containerId);
-    const status = running ? "🟢 running" : "⚫ stopped";
-    const started = c.startedAt
-      ? new Date(c.startedAt).toLocaleString()
-      : "unknown";
-
-    console.log(`  ${shortId}  ${status}  ${started.padEnd(20)}  ${c.workspaceFolder}`);
-
-    // Clean up stale entries
-    if (!running) {
-      removeContainer(c.workspaceFolder);
-    }
+    const running = c.status.toLowerCase().startsWith("up ");
+    const icon = running ? "🟢" : "⚫";
+    console.log(`  ${shortId}  ${icon} ${c.status.padEnd(24)}  ${c.workspaceFolder}`);
   }
 }

@@ -10,6 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { piConfigDir, pathExists } from "./paths.js";
 
 export interface PiDevcontainerConfig {
@@ -52,12 +53,18 @@ function readConfigFile(configPath: string, label: string): Partial<PiDevcontain
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    // Strip JSON comments (// and /* */) and trailing commas (JSONC → JSON)
-    const stripped = raw
-      .replace(/\/\/.*$/gm, "")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/,\s*([}\]])/g, "$1");
-    return JSON.parse(stripped) as Partial<PiDevcontainerConfig>;
+    const errors: ParseError[] = [];
+    const parsed = parse(raw, errors, {
+      allowTrailingComma: true,
+      disallowComments: false,
+    }) as Partial<PiDevcontainerConfig>;
+
+    if (errors.length > 0) {
+      const first = errors[0];
+      throw new Error(`${printParseErrorCode(first.error)} at offset ${first.offset}`);
+    }
+
+    return parsed;
   } catch (err) {
     console.error(
       `Warning: Failed to parse ${label}: ${err instanceof Error ? err.message : err}`
