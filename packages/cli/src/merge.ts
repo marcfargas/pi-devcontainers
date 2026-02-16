@@ -186,6 +186,29 @@ export function mergeDevcontainerJson(
   const existingEnv = merged.remoteEnv ?? {};
   merged.remoteEnv = { ...resolvedEnv, ...existingEnv };
 
+  // On Windows, Docker Desktop rewrites bind-mount symlink targets with a
+  // /mnt/host/ prefix (e.g. /c/dev/foo → /mnt/host/c/dev/foo). These paths
+  // don't resolve inside the container. Add a postCreateCommand to create a
+  // symlink so /mnt/host/c → /c (and any other drive letters we use).
+  if (process.platform === "win32") {
+    const drives = new Set<string>();
+    for (const mount of merged.mounts ?? []) {
+      const target = typeof mount === "string" ? "" : mount.target;
+      const match = target.match(/^\/([a-z])\//);
+      if (match) drives.add(match[1]);
+    }
+    if (drives.size > 0) {
+      const cmds = [
+        "sudo mkdir -p /mnt/host",
+        ...Array.from(drives).map(d => `sudo ln -sfn /${d} /mnt/host/${d}`),
+      ];
+      merged.postCreateCommand = chainPostCreateCommand(
+        merged.postCreateCommand,
+        cmds.join(" && "),
+      );
+    }
+  }
+
   return merged;
 }
 
