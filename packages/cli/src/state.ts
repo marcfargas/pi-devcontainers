@@ -13,6 +13,7 @@ import { piConfigDir, pathExists, normalizePath } from "./paths.js";
 export interface ContainerState {
   containerId: string;
   workspaceFolder: string;
+  remoteWorkspaceFolder?: string; // workspace path inside container (from devcontainer up)
   configDir: string; // temp dir with merged devcontainer.json
   settingsDir?: string; // temp dir with patched settings.json
   remoteUser?: string; // from devcontainer.json remoteUser

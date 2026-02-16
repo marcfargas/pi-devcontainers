@@ -35,7 +35,10 @@ export async function commandRun(opts: RunOptions): Promise<void> {
 
   const exitCode = await dockerExecInteractive(state.containerId, [
     "holdpty", "attach", sessionName,
-  ], state.remoteUser);
+  ], {
+    user: state.remoteUser,
+    workdir: state.remoteWorkspaceFolder,
+  });
 
   // 3. Down
   console.log("\n🛑 Session ended — cleaning up...");

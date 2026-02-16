@@ -42,7 +42,7 @@ export interface DevcontainerUpOptions {
  * Build logs are captured and only shown on error.
  * A progress indicator shows the last meaningful line.
  */
-export function devcontainerUp(opts: DevcontainerUpOptions): string {
+export function devcontainerUp(opts: DevcontainerUpOptions): DevcontainerUpResult {
   const args = [
     "@devcontainers/cli",
     "up",
@@ -101,7 +101,12 @@ export function devcontainerUp(opts: DevcontainerUpOptions): string {
 }
 
 
-function parseDevcontainerUpResult(result: string): string {
+export interface DevcontainerUpResult {
+  containerId: string;
+  remoteWorkspaceFolder?: string;
+}
+
+function parseDevcontainerUpResult(result: string): DevcontainerUpResult {
   try {
     const output = JSON.parse(result);
     if (output.containerId) {
@@ -110,7 +115,10 @@ function parseDevcontainerUpResult(result: string): string {
           `  ⚠ Container started but postCreateCommand failed (non-fatal)`
         );
       }
-      return output.containerId;
+      return {
+        containerId: output.containerId,
+        remoteWorkspaceFolder: output.remoteWorkspaceFolder,
+      };
     }
     throw new Error(
       `devcontainer up failed: ${output.message || "no container ID in output"}`
@@ -118,7 +126,7 @@ function parseDevcontainerUpResult(result: string): string {
   } catch (err) {
     if (err instanceof SyntaxError) {
       const match = result.match(/"containerId":\s*"([^"]+)"/);
-      if (match) return match[1];
+      if (match) return { containerId: match[1] };
       throw new Error(`devcontainer up returned unexpected output: ${result.substring(0, 200)}`);
     }
     throw err;
@@ -153,9 +161,14 @@ export function isContainerRunning(containerId: string): boolean {
  * Execute a command inside a running container (non-interactive, captured output).
  * If user is specified, runs as that user; otherwise uses the container's default.
  */
-export function dockerExec(containerId: string, command: string[], user?: string): string {
+export function dockerExec(
+  containerId: string,
+  command: string[],
+  opts?: { user?: string; workdir?: string },
+): string {
   const args = ["exec", ...DOCKER_EXEC_ENV];
-  if (user) args.push("-u", user);
+  if (opts?.user) args.push("-u", opts.user);
+  if (opts?.workdir) args.push("-w", opts.workdir);
   args.push(containerId, ...command);
   return execSync(
     `docker ${args.map(a => `"${a}"`).join(" ")}`,
@@ -174,11 +187,12 @@ export function dockerExec(containerId: string, command: string[], user?: string
 export function dockerExecInteractive(
   containerId: string,
   command: string[],
-  user?: string,
+  opts?: { user?: string; workdir?: string },
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     const args = ["exec", "-it", ...DOCKER_EXEC_ENV];
-    if (user) args.push("-u", user);
+    if (opts?.user) args.push("-u", opts.user);
+    if (opts?.workdir) args.push("-w", opts.workdir);
     args.push(containerId, ...command);
 
     const child = spawn("docker", args, { stdio: "inherit" });

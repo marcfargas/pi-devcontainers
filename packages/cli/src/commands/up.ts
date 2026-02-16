@@ -135,12 +135,13 @@ export async function commandUp(opts: UpOptions): Promise<void> {
 
   // 7. devcontainer up
   console.log("  ✓ Starting devcontainer...");
-  const containerId = devcontainerUp({
+  const upResult = devcontainerUp({
     workspaceFolder,
     configPath: tempConfigPath,
     rebuild: opts.rebuild,
     verbose: opts.verbose,
   });
+  const { containerId, remoteWorkspaceFolder } = upResult;
   const shortId = containerId.substring(0, 12);
   console.log(`  ✓ Container started: ${shortId}`);
 
@@ -148,6 +149,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   saveContainer({
     containerId,
     workspaceFolder,
+    remoteWorkspaceFolder,
     configDir: tempConfigDir,
     settingsDir: settingsResolution.patchedSettingsPath
       ? join(settingsResolution.patchedSettingsPath, "..")
@@ -165,7 +167,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
       }
       dockerExec(containerId, [
         "holdpty", "launch", "--bg", "--name", "pi", "--", "pi",
-      ], remoteUser);
+      ], { user: remoteUser, workdir: remoteWorkspaceFolder });
       console.log("  ✓ Pi session started (holdpty)");
       console.log(
         `\n  Attach with: pidc attach -w "${opts.workspaceFolder}"`
