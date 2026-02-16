@@ -8,8 +8,27 @@
 import { execFileSync, execSync, spawn } from "node:child_process";
 import { normalizePath } from "./paths.js";
 
-// On Windows, `devcontainer`/`npx` are often .cmd wrappers; use shell mode.
-const SHELL_ON_WIN = process.platform === "win32";
+// On Windows, `devcontainer`/`npx` are often .cmd wrappers; need shell mode.
+const IS_WIN = process.platform === "win32";
+
+/**
+ * Quote an argument for safe embedding in a cmd.exe command string.
+ * Characters known safe for bare use pass through; everything else
+ * gets wrapped in double quotes with internal `"` escaped as `""`.
+ */
+function winQuote(arg: string): string {
+  if (/^[a-zA-Z0-9_./:=@\\-]+$/.test(arg)) return arg;
+  return '"' + arg.replace(/"/g, '""') + '"';
+}
+
+/**
+ * Build a properly quoted command string for cmd.exe.
+ * Fixes Node DEP0190: execFileSync with shell:true concatenates args
+ * without escaping, breaking commands that contain spaces, &&, $, etc.
+ */
+function buildWinCmd(bin: string, args: string[]): string {
+  return [bin, ...args].map(winQuote).join(" ");
+}
 
 // ─── devcontainer CLI ───────────────────────────────────────────────
 
@@ -21,12 +40,15 @@ function detectDevcontainersRunner(): DevcontainerRunner {
 
   // Prefer globally installed `devcontainer` binary when available.
   try {
-    execFileSync("devcontainer", ["--version"], {
-      encoding: "utf-8",
-      timeout: 15000,
-      stdio: "pipe",
-      shell: SHELL_ON_WIN,
-    });
+    if (IS_WIN) {
+      execSync(buildWinCmd("devcontainer", ["--version"]), {
+        encoding: "utf-8", timeout: 15000, stdio: "pipe",
+      });
+    } else {
+      execFileSync("devcontainer", ["--version"], {
+        encoding: "utf-8", timeout: 15000, stdio: "pipe",
+      });
+    }
     cachedRunner = "devcontainer";
     return cachedRunner;
   } catch {
@@ -34,12 +56,15 @@ function detectDevcontainersRunner(): DevcontainerRunner {
   }
 
   try {
-    execFileSync("npx", ["@devcontainers/cli", "--version"], {
-      encoding: "utf-8",
-      timeout: 15000,
-      stdio: "pipe",
-      shell: SHELL_ON_WIN,
-    });
+    if (IS_WIN) {
+      execSync(buildWinCmd("npx", ["@devcontainers/cli", "--version"]), {
+        encoding: "utf-8", timeout: 15000, stdio: "pipe",
+      });
+    } else {
+      execFileSync("npx", ["@devcontainers/cli", "--version"], {
+        encoding: "utf-8", timeout: 15000, stdio: "pipe",
+      });
+    }
     cachedRunner = "npx";
     return cachedRunner;
   } catch {
@@ -94,22 +119,28 @@ export function devcontainerUp(opts: DevcontainerUpOptions): void {
   const invocation = devcontainerInvocation(cliArgs);
 
   if (opts.verbose) {
-    execFileSync(invocation.bin, invocation.args, {
-      encoding: "utf-8",
-      timeout: 600000,
-      stdio: "inherit",
-      shell: SHELL_ON_WIN,
-    });
+    if (IS_WIN) {
+      execSync(buildWinCmd(invocation.bin, invocation.args), {
+        encoding: "utf-8", timeout: 600000, stdio: "inherit",
+      });
+    } else {
+      execFileSync(invocation.bin, invocation.args, {
+        encoding: "utf-8", timeout: 600000, stdio: "inherit",
+      });
+    }
     return;
   }
 
   try {
-    execFileSync(invocation.bin, invocation.args, {
-      encoding: "utf-8",
-      timeout: 600000,
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: SHELL_ON_WIN,
-    });
+    if (IS_WIN) {
+      execSync(buildWinCmd(invocation.bin, invocation.args), {
+        encoding: "utf-8", timeout: 600000, stdio: ["pipe", "pipe", "pipe"],
+      });
+    } else {
+      execFileSync(invocation.bin, invocation.args, {
+        encoding: "utf-8", timeout: 600000, stdio: ["pipe", "pipe", "pipe"],
+      });
+    }
   } catch (err: unknown) {
     const execErr = err as {
       stdout?: string | Buffer;
@@ -145,11 +176,18 @@ export function devcontainerExec(
     ...command,
   ]);
 
+  if (IS_WIN) {
+    return execSync(buildWinCmd(invocation.bin, invocation.args), {
+      encoding: "utf-8",
+      timeout: 60000,
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+  }
+
   return execFileSync(invocation.bin, invocation.args, {
     encoding: "utf-8",
     timeout: 60000,
     stdio: ["pipe", "pipe", "inherit"],
-    shell: SHELL_ON_WIN,
   });
 }
 
@@ -167,10 +205,14 @@ export function devcontainerExecInteractive(
       ...command,
     ]);
 
-    const child = spawn(invocation.bin, invocation.args, {
-      stdio: "inherit",
-      shell: SHELL_ON_WIN,
-    });
+    const child = IS_WIN
+      ? spawn(buildWinCmd(invocation.bin, invocation.args), {
+          stdio: "inherit",
+          shell: true,
+        })
+      : spawn(invocation.bin, invocation.args, {
+          stdio: "inherit",
+        });
 
     child.on("error", reject);
     child.on("exit", (code) => resolve(code ?? 0));

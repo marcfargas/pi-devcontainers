@@ -138,15 +138,20 @@ describe("pidc e2e", () => {
     for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 
-  // ── root user (default, no devcontainer.json) ─────────────────
+  // ── root user (explicit remoteUser: root) ──────────────────
 
-  describe("root user (no devcontainer.json)", () => {
+  describe("root user (explicit remoteUser: root)", () => {
     let wf: string;
     let ws: string;
 
+    const dc: DevcontainerJson = {
+      image: "mcr.microsoft.com/devcontainers/base:ubuntu",
+      remoteUser: "root",
+    };
+
     beforeAll(() => {
-      const p = createProject("root");
-      wf = tracked(p, up(p, piDir));
+      const p = createProject("root", dc as Record<string, unknown>);
+      wf = tracked(p, up(p, piDir, dc));
       ws = `/workspaces/${basename(wf)}`;
     }, 300000);
 
@@ -158,8 +163,8 @@ describe("pidc e2e", () => {
 
     it("~/.pi/agent/auth.json readable",   () => expect(exec(wf, "cat /root/.pi/agent/auth.json")).toContain("test-secret"));
     it("~/.pi/agent/AGENTS.md exists",     () => expect(exec(wf, "cat /root/.pi/agent/AGENTS.md")).toContain("Test"));
-    it("~/.pi/todos is writable",          () => expect(exec(wf, "touch /root/.pi/todos/x && echo ok")).toBe("ok"));
-    it("~/.pi/memoria is writable",        () => expect(exec(wf, "touch /root/.pi/memoria/x && echo ok")).toBe("ok"));
+    it("~/.pi/todos is writable",          () => expect(exec(wf, "touch /root/.pi/todos/root-x && echo ok")).toBe("ok"));
+    it("~/.pi/memoria is writable",        () => expect(exec(wf, "touch /root/.pi/memoria/root-x && echo ok")).toBe("ok"));
 
     it("bash -lc cd works (holdpty CWD pattern)", () => {
       expect(exec(wf, `cd '${ws}' && pwd`)).toBe(ws);
@@ -187,8 +192,8 @@ describe("pidc e2e", () => {
 
     it("auth.json readable at /home/node/.pi",  () => expect(exec(wf, "cat /home/node/.pi/agent/auth.json")).toContain("test-secret"));
     it("AGENTS.md exists at /home/node/.pi",    () => expect(exec(wf, "cat /home/node/.pi/agent/AGENTS.md")).toContain("Test"));
-    it("todos writable as node",                () => expect(exec(wf, "touch /home/node/.pi/todos/x && echo ok")).toBe("ok"));
-    it("memoria writable as node",              () => expect(exec(wf, "touch /home/node/.pi/memoria/x && echo ok")).toBe("ok"));
+    it("todos writable as node",                () => expect(exec(wf, "touch /home/node/.pi/todos/node-x && echo ok")).toBe("ok"));
+    it("memoria writable as node",              () => expect(exec(wf, "touch /home/node/.pi/memoria/node-x && echo ok")).toBe("ok"));
 
     it("workspace has README",   () => expect(exec(wf, `cat ${ws}/README.md`)).toContain("node"));
     it("PI_DEVCONTAINER is set", () => expect(exec(wf, "echo $PI_DEVCONTAINER")).toBe("1"));
@@ -216,7 +221,7 @@ describe("pidc e2e", () => {
     it("whoami → vscode",     () => expect(exec(wf, "whoami")).toBe("vscode"));
     it("HOME → /home/vscode", () => expect(exec(wf, "echo $HOME")).toBe("/home/vscode"));
     it("auth.json readable",  () => expect(exec(wf, "cat /home/vscode/.pi/agent/auth.json")).toContain("test-secret"));
-    it("todos writable",      () => expect(exec(wf, "touch /home/vscode/.pi/todos/x && echo ok")).toBe("ok"));
+    it("todos writable",      () => expect(exec(wf, "touch /home/vscode/.pi/todos/vscode-x && echo ok")).toBe("ok"));
   });
 
   // ── remoteEnv ─────────────────────────────────────────────────
