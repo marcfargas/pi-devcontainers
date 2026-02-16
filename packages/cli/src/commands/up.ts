@@ -146,7 +146,13 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   const shortId = containerId.substring(0, 12);
   console.log(`  ✓ Container started: ${shortId}`);
 
-  // 8. Save state for attach/down/status
+  // 8. Build the env that docker exec needs (PI_DEVCONTAINER + user/project env)
+  const execEnv: Record<string, string> = {
+    PI_DEVCONTAINER: "1",
+    ...resolvedEnv,
+  };
+
+  // 9. Save state for attach/down/status (no env — may contain secrets)
   saveContainer({
     containerId,
     workspaceFolder,
@@ -159,7 +165,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     startedAt: new Date().toISOString(),
   });
 
-  // 9. Launch pi via holdpty
+  // 10. Launch pi via holdpty
   if (config.mode === "holdpty") {
     console.log("  ✓ Launching pi via holdpty...");
     try {
@@ -168,7 +174,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
       }
       dockerExec(containerId, [
         "holdpty", "launch", "--bg", "--name", "pi", "--", "pi",
-      ], { user: remoteUser, workdir: remoteWorkspaceFolder });
+      ], { user: remoteUser, workdir: remoteWorkspaceFolder, env: execEnv });
       console.log("  ✓ Pi session started (holdpty)");
       console.log(
         `\n  Attach with: pidc attach -w "${opts.workspaceFolder}"`

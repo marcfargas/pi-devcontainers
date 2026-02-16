@@ -135,12 +135,25 @@ function parseDevcontainerUpResult(result: string): DevcontainerUpResult {
 
 // ─── Docker direct (for exec/stop/rm) ───────────────────────────────
 
-/** Env vars to inject into every docker exec for proper TUI rendering. */
-const DOCKER_EXEC_ENV = [
-  "-e", "TERM=xterm-256color",
-  "-e", "COLORTERM=truecolor",
-  "-e", "LANG=C.UTF-8",
-];
+/** Base env vars to inject into every docker exec for proper TUI rendering. */
+const BASE_EXEC_ENV: Record<string, string> = {
+  TERM: "xterm-256color",
+  COLORTERM: "truecolor",
+  LANG: "C.UTF-8",
+};
+
+/**
+ * Build docker exec -e flags from env records.
+ * Base TUI env is always included. Additional env vars are merged on top.
+ */
+function buildExecEnvFlags(extraEnv?: Record<string, string>): string[] {
+  const merged = { ...BASE_EXEC_ENV, ...(extraEnv ?? {}) };
+  const flags: string[] = [];
+  for (const [k, v] of Object.entries(merged)) {
+    flags.push("-e", `${k}=${v}`);
+  }
+  return flags;
+}
 
 /**
  * Check if a container is running.
@@ -157,6 +170,13 @@ export function isContainerRunning(containerId: string): boolean {
   }
 }
 
+export interface DockerExecOptions {
+  user?: string;
+  workdir?: string;
+  /** Extra env vars to inject via docker exec -e flags */
+  env?: Record<string, string>;
+}
+
 /**
  * Execute a command inside a running container (non-interactive, captured output).
  * If user is specified, runs as that user; otherwise uses the container's default.
@@ -164,9 +184,10 @@ export function isContainerRunning(containerId: string): boolean {
 export function dockerExec(
   containerId: string,
   command: string[],
-  opts?: { user?: string; workdir?: string },
+  opts?: DockerExecOptions,
 ): string {
-  const args = ["exec", ...DOCKER_EXEC_ENV];
+  const envFlags = buildExecEnvFlags(opts?.env);
+  const args = ["exec", ...envFlags];
   if (opts?.user) args.push("-u", opts.user);
   if (opts?.workdir) args.push("-w", opts.workdir);
   args.push(containerId, ...command);
@@ -187,10 +208,11 @@ export function dockerExec(
 export function dockerExecInteractive(
   containerId: string,
   command: string[],
-  opts?: { user?: string; workdir?: string },
+  opts?: DockerExecOptions,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const args = ["exec", "-it", ...DOCKER_EXEC_ENV];
+    const envFlags = buildExecEnvFlags(opts?.env);
+    const args = ["exec", "-it", ...envFlags];
     if (opts?.user) args.push("-u", opts.user);
     if (opts?.workdir) args.push("-w", opts.workdir);
     args.push(containerId, ...command);
