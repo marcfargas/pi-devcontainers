@@ -49,12 +49,14 @@ export async function commandAttach(opts: AttachOptions): Promise<void> {
     return;
   }
 
+  const remoteUser = state?.remoteUser;
+
   console.log(`🔗 Attaching to pi session "${sessionName}" in ${workspaceFolder}`);
   console.log("   (Detach: Ctrl+A then d)\n");
 
   const exitCode = await dockerExecInteractive(containerId, [
     "holdpty", "attach", sessionName,
-  ]);
+  ], remoteUser);
 
   if (exitCode !== 0) {
     console.error(`\n⚠ Session exited with code ${exitCode}`);

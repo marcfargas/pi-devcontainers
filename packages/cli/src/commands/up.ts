@@ -109,12 +109,19 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   // 5. Merge configs
   console.log("  ✓ Merging configuration...");
 
+  // First pass without pi mounts to get the merged remoteUser
+  const remoteUser = (projectConfig?.remoteUser as string | undefined) ?? undefined;
+  const containerHome = remoteUser
+    ? (remoteUser === "root" ? "/root" : `/home/${remoteUser}`)
+    : "/root"; // devcontainer default when remoteUser is not set
+
   const merged = mergeDevcontainerJson(
     projectConfig ?? {},
     config,
     resolvedEnv,
     {
       featureRef: FEATURE_REF,
+      containerHome,
       settingsMounts: settingsResolution.mounts,
       patchedSettingsPath: settingsResolution.patchedSettingsPath ?? undefined,
     }
@@ -138,7 +145,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
   const shortId = containerId.substring(0, 12);
   console.log(`  ✓ Container started: ${shortId}`);
 
-  // 7. Save state for attach/down/status
+  // 8. Save state for attach/down/status
   saveContainer({
     containerId,
     workspaceFolder,
@@ -146,10 +153,11 @@ export async function commandUp(opts: UpOptions): Promise<void> {
     settingsDir: settingsResolution.patchedSettingsPath
       ? join(settingsResolution.patchedSettingsPath, "..")
       : undefined,
+    remoteUser,
     startedAt: new Date().toISOString(),
   });
 
-  // 8. Launch pi via holdpty using docker exec
+  // 9. Launch pi via holdpty using docker exec
   if (config.mode === "holdpty") {
     console.log("  ✓ Launching pi via holdpty...");
     try {
@@ -158,7 +166,7 @@ export async function commandUp(opts: UpOptions): Promise<void> {
       }
       dockerExec(containerId, [
         "holdpty", "launch", "--bg", "--name", "pi", "--", "pi",
-      ]);
+      ], remoteUser);
       console.log("  ✓ Pi session started (holdpty)");
       console.log(
         `\n  Attach with: pidc attach -w "${opts.workspaceFolder}"`

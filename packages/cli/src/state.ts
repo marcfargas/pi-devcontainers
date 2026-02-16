@@ -15,6 +15,7 @@ export interface ContainerState {
   workspaceFolder: string;
   configDir: string; // temp dir with merged devcontainer.json
   settingsDir?: string; // temp dir with patched settings.json
+  remoteUser?: string; // from devcontainer.json remoteUser
   startedAt: string; // ISO timestamp
 }
 

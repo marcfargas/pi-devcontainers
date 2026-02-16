@@ -142,16 +142,15 @@ export function isContainerRunning(containerId: string): boolean {
   }
 }
 
-/** Default container user — devcontainer base images use 'vscode'. */
-const CONTAINER_USER = "vscode";
-
 /**
  * Execute a command inside a running container (non-interactive, captured output).
+ * If user is specified, runs as that user; otherwise uses the container's default.
  */
-export function dockerExec(containerId: string, command: string[]): string {
+export function dockerExec(containerId: string, command: string[], user?: string): string {
+  const userArgs = user ? `-u ${user}` : "";
   const escaped = command.map(c => `"${c.replace(/"/g, '\\"')}"`).join(" ");
   return execSync(
-    `docker exec -u ${CONTAINER_USER} "${containerId}" ${escaped}`,
+    `docker exec ${userArgs} "${containerId}" ${escaped}`,
     {
       encoding: "utf-8",
       timeout: 60000,
@@ -166,14 +165,15 @@ export function dockerExec(containerId: string, command: string[]): string {
  */
 export function dockerExecInteractive(
   containerId: string,
-  command: string[]
+  command: string[],
+  user?: string,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      "docker",
-      ["exec", "-it", "-u", CONTAINER_USER, containerId, ...command],
-      { stdio: "inherit" }
-    );
+    const args = ["exec", "-it"];
+    if (user) args.push("-u", user);
+    args.push(containerId, ...command);
+
+    const child = spawn("docker", args, { stdio: "inherit" });
 
     child.on("error", reject);
     child.on("exit", (code) => resolve(code ?? 0));
