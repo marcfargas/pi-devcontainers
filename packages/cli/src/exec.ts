@@ -10,19 +10,51 @@ import { normalizePath } from "./paths.js";
 
 // ─── devcontainer CLI ───────────────────────────────────────────────
 
-/** Check that devcontainers CLI is available. */
-export function ensureDevcontainersCli(): void {
+type DevcontainerRunner = "devcontainer" | "npx";
+let cachedRunner: DevcontainerRunner | null = null;
+
+function detectDevcontainersRunner(): DevcontainerRunner {
+  if (cachedRunner) return cachedRunner;
+
+  // Prefer globally installed `devcontainer` binary when available.
+  try {
+    execFileSync("devcontainer", ["--version"], {
+      encoding: "utf-8",
+      timeout: 15000,
+      stdio: "pipe",
+    });
+    cachedRunner = "devcontainer";
+    return cachedRunner;
+  } catch {
+    // fallback to npx package runner
+  }
+
   try {
     execFileSync("npx", ["@devcontainers/cli", "--version"], {
       encoding: "utf-8",
       timeout: 15000,
       stdio: "pipe",
     });
+    cachedRunner = "npx";
+    return cachedRunner;
   } catch {
     throw new Error(
-      "devcontainers CLI not found. Install it with: npm install -g @devcontainers/cli"
+      "devcontainers CLI not found. Install `devcontainer` CLI or @devcontainers/cli (npx)."
     );
   }
+}
+
+function devcontainerInvocation(args: string[]): { bin: string; args: string[] } {
+  const runner = detectDevcontainersRunner();
+  if (runner === "devcontainer") {
+    return { bin: "devcontainer", args };
+  }
+  return { bin: "npx", args: ["@devcontainers/cli", ...args] };
+}
+
+/** Check that devcontainers CLI is available. */
+export function ensureDevcontainersCli(): void {
+  detectDevcontainersRunner();
 }
 
 export interface DevcontainerUpOptions {
@@ -35,8 +67,7 @@ export interface DevcontainerUpOptions {
 
 /** Run `devcontainer up` with the given config. */
 export function devcontainerUp(opts: DevcontainerUpOptions): void {
-  const args = [
-    "@devcontainers/cli",
+  const cliArgs = [
     "up",
     "--workspace-folder",
     opts.workspaceFolder,
@@ -45,12 +76,14 @@ export function devcontainerUp(opts: DevcontainerUpOptions): void {
   ];
 
   if (opts.rebuild) {
-    args.push("--remove-existing-container");
-    args.push("--build-no-cache");
+    cliArgs.push("--remove-existing-container");
+    cliArgs.push("--build-no-cache");
   }
 
+  const invocation = devcontainerInvocation(cliArgs);
+
   if (opts.verbose) {
-    execFileSync("npx", args, {
+    execFileSync(invocation.bin, invocation.args, {
       encoding: "utf-8",
       timeout: 600000,
       stdio: "inherit",
@@ -59,7 +92,7 @@ export function devcontainerUp(opts: DevcontainerUpOptions): void {
   }
 
   try {
-    execFileSync("npx", args, {
+    execFileSync(invocation.bin, invocation.args, {
       encoding: "utf-8",
       timeout: 600000,
       stdio: ["pipe", "pipe", "pipe"],
@@ -91,16 +124,15 @@ export function devcontainerExec(
   workspaceFolder: string,
   command: string[],
 ): string {
-  const args = [
-    "@devcontainers/cli",
+  const invocation = devcontainerInvocation([
     "exec",
     "--workspace-folder",
     workspaceFolder,
     "--",
     ...command,
-  ];
+  ]);
 
-  return execFileSync("npx", args, {
+  return execFileSync(invocation.bin, invocation.args, {
     encoding: "utf-8",
     timeout: 60000,
     stdio: ["pipe", "pipe", "inherit"],
@@ -113,16 +145,15 @@ export function devcontainerExecInteractive(
   command: string[],
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const args = [
-      "@devcontainers/cli",
+    const invocation = devcontainerInvocation([
       "exec",
       "--workspace-folder",
       workspaceFolder,
       "--",
       ...command,
-    ];
+    ]);
 
-    const child = spawn("npx", args, { stdio: "inherit" });
+    const child = spawn(invocation.bin, invocation.args, { stdio: "inherit" });
 
     child.on("error", reject);
     child.on("exit", (code) => resolve(code ?? 0));
