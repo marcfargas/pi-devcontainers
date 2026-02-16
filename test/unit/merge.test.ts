@@ -170,10 +170,10 @@ describe("mergeDevcontainerJson", () => {
     expect(hostMount).toBeDefined();
   });
 
-  it("adds writable volume mounts for configured dirs", () => {
+  it("adds writable bind mounts for configured dirs", () => {
     const merged = mergeDevcontainerJson({}, DEFAULT_CONFIG, {});
 
-    const mounts = merged.mounts as Array<{ type: string; source: string; target: string }>;
+    const mounts = merged.mounts as Array<{ type: string; source: string; target: string; readonly?: string }>;
     const todoMount = mounts.find((m) =>
       typeof m === "object" && m.target === "/root/.pi/todos"
     );
@@ -182,9 +182,11 @@ describe("mergeDevcontainerJson", () => {
     );
 
     expect(todoMount).toBeDefined();
-    expect(todoMount!.type).toBe("volume");
+    expect(todoMount!.type).toBe("bind");
+    expect(todoMount!.readonly).toBeUndefined();
     expect(memoriaMount).toBeDefined();
-    expect(memoriaMount!.type).toBe("volume");
+    expect(memoriaMount!.type).toBe("bind");
+    expect(memoriaMount!.readonly).toBeUndefined();
   });
 
   it("merges remoteEnv without overwriting project vars", () => {

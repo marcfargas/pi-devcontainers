@@ -61,8 +61,8 @@ Host (any OS)                            Container (Linux amd64)
 | Mount | Type | Purpose |
 |-------|------|---------|
 | `~/.pi` → `~/.pi` | bind (RO) | All pi config: agent settings, skills, extensions references |
-| `~/.pi/todos` | volume (RW) | Writable overlay for TODO persistence |
-| `~/.pi/memoria` | volume (RW) | Writable overlay for agent memory |
+| `~/.pi/todos` | bind (RW) | Writable overlay for TODO persistence |
+| `~/.pi/memoria` | bind (RW) | Writable overlay for agent memory |
 | Extension/skill dirs | bind (RO) | Each path from `settings.json`, mounted at POSIX equivalent |
 | `settings.json` | bind (file) | **Windows only** — patched copy with path conversion |
 | Project dir | bind (RW) | Your project workspace |

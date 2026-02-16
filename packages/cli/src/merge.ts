@@ -68,11 +68,13 @@ function piMounts(
     },
   ];
 
-  // Writable volume overlays on top of the RO bind mount
+  // Writable bind mount overlays on top of the RO bind mount.
+  // These are RW bind mounts of the specific host directories so the container
+  // can read existing content AND write back to the host.
   for (const dir of config.writable) {
     mounts.push({
-      type: "volume",
-      source: `pi-${dir.replace(/\//g, "-")}`,
+      type: "bind",
+      source: dockerMountPath(`${piDir}/${dir}`),
       target: `${containerPiDir}/${dir}`,
     });
   }
