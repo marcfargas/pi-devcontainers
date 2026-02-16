@@ -8,6 +8,9 @@
 import { execFileSync, execSync, spawn } from "node:child_process";
 import { normalizePath } from "./paths.js";
 
+// On Windows, `devcontainer`/`npx` are often .cmd wrappers; use shell mode.
+const SHELL_ON_WIN = process.platform === "win32";
+
 // ─── devcontainer CLI ───────────────────────────────────────────────
 
 type DevcontainerRunner = "devcontainer" | "npx";
@@ -22,6 +25,7 @@ function detectDevcontainersRunner(): DevcontainerRunner {
       encoding: "utf-8",
       timeout: 15000,
       stdio: "pipe",
+      shell: SHELL_ON_WIN,
     });
     cachedRunner = "devcontainer";
     return cachedRunner;
@@ -34,6 +38,7 @@ function detectDevcontainersRunner(): DevcontainerRunner {
       encoding: "utf-8",
       timeout: 15000,
       stdio: "pipe",
+      shell: SHELL_ON_WIN,
     });
     cachedRunner = "npx";
     return cachedRunner;
@@ -87,6 +92,7 @@ export function devcontainerUp(opts: DevcontainerUpOptions): void {
       encoding: "utf-8",
       timeout: 600000,
       stdio: "inherit",
+      shell: SHELL_ON_WIN,
     });
     return;
   }
@@ -96,6 +102,7 @@ export function devcontainerUp(opts: DevcontainerUpOptions): void {
       encoding: "utf-8",
       timeout: 600000,
       stdio: ["pipe", "pipe", "pipe"],
+      shell: SHELL_ON_WIN,
     });
   } catch (err: unknown) {
     const execErr = err as {
@@ -136,6 +143,7 @@ export function devcontainerExec(
     encoding: "utf-8",
     timeout: 60000,
     stdio: ["pipe", "pipe", "inherit"],
+    shell: SHELL_ON_WIN,
   });
 }
 
@@ -153,7 +161,10 @@ export function devcontainerExecInteractive(
       ...command,
     ]);
 
-    const child = spawn(invocation.bin, invocation.args, { stdio: "inherit" });
+    const child = spawn(invocation.bin, invocation.args, {
+      stdio: "inherit",
+      shell: SHELL_ON_WIN,
+    });
 
     child.on("error", reject);
     child.on("exit", (code) => resolve(code ?? 0));
