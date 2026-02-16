@@ -1,5 +1,12 @@
 # pi-devcontainers
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [[`2bafe85`](https://github.com/marcfargas/pi-devcontainers/commit/2bafe85bce7b8c8c05a8993566de8a577763930f), [`efb969b`](https://github.com/marcfargas/pi-devcontainers/commit/efb969beb1d90eb475192e489b16733327a23785), [`2bafe85`](https://github.com/marcfargas/pi-devcontainers/commit/2bafe85bce7b8c8c05a8993566de8a577763930f)]:
+  - @marcfargas/pi-devcontainers@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
